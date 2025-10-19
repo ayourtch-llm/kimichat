@@ -15,3 +15,4 @@ glob = "0.3"
 dotenvy = "0.15"
 regex = "*"
 chrono = { version = "0.4.42", features = ["serde"] }
+thiserror = "1.0"

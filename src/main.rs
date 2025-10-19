@@ -16,6 +16,7 @@ use std::ops::RangeInclusive;
 
 
 mod logging;
+mod open_file;
 use logging::ConversationLogger;
 
 
