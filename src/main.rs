@@ -15,6 +15,10 @@ use std::io::Write;
 use std::ops::RangeInclusive;
 
 
+mod logging;
+use logging::ConversationLogger;
+
+
 const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MAX_CONTEXT_TOKENS: usize = 100_000; // Keep conversation under this to avoid rate limits
 const MAX_RETRIES: u32 = 3;
@@ -193,6 +197,7 @@ struct KimiChat {
     messages: Vec<Message>,
     current_model: ModelType,
     total_tokens_used: usize,
+    logger: Option<ConversationLogger>,
 }
 
 impl KimiChat {
@@ -204,6 +209,7 @@ impl KimiChat {
             messages: Vec::new(),
             current_model: ModelType::Kimi,
             total_tokens_used: 0,
+            logger: None,
         };
 
         // Add system message to inform the model about capabilities
