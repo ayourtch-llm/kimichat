@@ -172,9 +172,25 @@ impl KimiChat {
         };
 
         // Add system message to inform the model about capabilities
-        chat.messages.push(Message {
-            role: "system".to_string(),
-            content: format!(
+        let system_content = if chat.current_model == ModelType::GptOss {
+            format!(
+                "You are an AI assistant with access to file operations and model switching capabilities. \
+                You are currently running as {}. You can switch to other models when appropriate:\n\
+                - kimi (Kimi-K2-Instruct-0905): Good for general tasks, coding, and quick responses\n\
+                - gpt-oss (GPT-OSS-120B): Good for complex reasoning, analysis, and advanced problem-solving\n\n\
+                Available tools (use ONLY these exact names):\n\
+                - read_file: Read file contents\n\
+                - write_file: Write/create a file\n\
+                - edit_file: Edit existing file by replacing content\n\
+                - list_files: List files (single-level patterns only, no **)\n\
+                - switch_model: Switch between models\n\n\
+                CRITICAL WARNING: If you attempt to call ANY tool not listed above (such as 'edit', 'repo_browser.search', \
+                'repo_browser.open_file', or any other made-up tool name), you will be IMMEDIATELY switched to the Kimi model \
+                and your request will be retried. Use ONLY the exact tool names listed above.",
+                chat.current_model.display_name()
+            )
+        } else {
+            format!(
                 "You are an AI assistant with access to file operations and model switching capabilities. \
                 You are currently running as {}. You can switch to other models when appropriate:\n\
                 - kimi (Kimi-K2-Instruct-0905): Good for general tasks, coding, and quick responses\n\
@@ -187,7 +203,12 @@ impl KimiChat {
                 - switch_model: Switch between models\n\n\
                 IMPORTANT: Only use the exact tool names listed above. Do not make up tool names.",
                 chat.current_model.display_name()
-            ),
+            )
+        };
+
+        chat.messages.push(Message {
+            role: "system".to_string(),
+            content: system_content,
             tool_calls: None,
             tool_call_id: None,
             name: None,
@@ -682,17 +703,20 @@ impl KimiChat {
         Ok(())
     }
 
-    async fn call_api(&self, messages: &[Message]) -> Result<(Message, Option<Usage>)> {
-        let request = ChatRequest {
-            model: self.current_model.as_str().to_string(),
-            messages: messages.to_vec(),
-            tools: Self::get_tools(),
-            tool_choice: "auto".to_string(),
-        };
+    async fn call_api(&self, orig_messages: &[Message]) -> Result<(Message, Option<Usage>, ModelType, Vec<Message>)> {
+        let mut current_model = self.current_model;
+        let mut messages = orig_messages.to_vec().clone();
+        
 
         // Retry logic with exponential backoff
         let mut retry_count = 0;
         loop {
+	    let request = ChatRequest {
+		model: current_model.as_str().to_string(),
+		messages: messages.clone(),
+		tools: Self::get_tools(),
+		tool_choice: "auto".to_string(),
+	    };
             let response = self
                 .client
                 .post(GROQ_API_URL)
@@ -726,6 +750,43 @@ impl KimiChat {
                 let status = response.status();
                 let error_body = response.text().await.unwrap_or_else(|_| "Unable to read error body".to_string());
 
+                // Check if this is a tool hallucination error from GPT-OSS
+                if status == 400 && error_body.contains("tool_use_failed") && error_body.contains("attempted to call tool") {
+                    eprintln!("{}", "❌ Tool hallucination detected!".red().bold());
+                    eprintln!("{}", error_body.yellow());
+
+                    if self.current_model == ModelType::GptOss {
+                        eprintln!("{}", "🔄 GPT-OSS-120B attempted to use non-existent tool. Switching to Kimi and retrying...".bright_cyan());
+
+                        // Switch to Kimi
+                        current_model = ModelType::Kimi;
+
+                        // Update system message
+                        if let Some(sys_msg) = messages.first_mut() {
+                            if sys_msg.role == "system" {
+                                sys_msg.content = format!(
+                                    "You are an AI assistant with access to file operations and model switching capabilities. \
+                                    You are currently running as {}. You can switch to other models when appropriate:\n\
+                                    - kimi (Kimi-K2-Instruct-0905): Good for general tasks, coding, and quick responses\n\
+                                    - gpt-oss (GPT-OSS-120B): Good for complex reasoning, analysis, and advanced problem-solving\n\n\
+                                    Available tools (use ONLY these exact names):\n\
+                                    - read_file: Read file contents\n\
+                                    - write_file: Write/create a file\n\
+                                    - edit_file: Edit existing file by replacing content\n\
+                                    - list_files: List files (single-level patterns only, no **)\n\
+                                    - switch_model: Switch between models\n\n\
+                                    IMPORTANT: Only use the exact tool names listed above. Do not make up tool names.",
+                                    self.current_model.display_name()
+                                );
+                            }
+                        }
+
+                        // Retry with Kimi - continue the loop to retry
+                        retry_count = 0; // Reset retry count for new model
+                        continue;
+                    }
+                }
+
                 eprintln!("{}", "=== API Error Details ===".red());
                 eprintln!("Status: {}", status);
                 eprintln!("Error body: {}", error_body);
@@ -757,7 +818,7 @@ impl KimiChat {
                 .map(|c| c.message)
                 .context("No response from API")?;
 
-            return Ok((message, chat_response.usage));
+            return Ok((message, chat_response.usage, current_model, messages));
         }
     }
 
@@ -774,7 +835,12 @@ impl KimiChat {
             // Summarize and trim history to keep context manageable
             self.summarize_and_trim_history().await?;
 
-            let (response, usage) = self.call_api(&self.messages).await?;
+            let (response, usage, current_model, messages) = self.call_api(&self.messages).await?;
+            self.messages = messages;
+            if self.current_model != current_model {
+                println!("Forced model switch: {:?} -> {:?}", &self.current_model, &current_model);
+                self.current_model = current_model;
+            }
 
             // Display token usage
             if let Some(usage) = &usage {
