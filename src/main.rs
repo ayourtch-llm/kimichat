@@ -260,14 +260,14 @@ impl KimiChat {
                 tool_type: "function".to_string(),
                 function: FunctionDef {
                     name: "list_files".to_string(),
-                    description: "List files in the work directory matching a glob pattern".to_string(),
+                    description: "List files in the work directory matching a single-level glob pattern. Recursive patterns (**) are NOT allowed to prevent massive output. Use patterns like 'src/*', '*.rs', or 'src/*.rs'.".to_string(),
                     parameters: serde_json::json!({
                         "type": "object",
                         "properties": {
                             "pattern": {
                                 "type": "string",
-                                "description": "Glob pattern to match files (e.g., '**/*.rs' for all Rust files)",
-                                "default": "**/*"
+                                "description": "Single-level glob pattern (e.g., 'src/*', '*.rs'). Do NOT use ** for recursion.",
+                                "default": "*"
                             }
                         }
                     }),
@@ -327,78 +327,28 @@ impl KimiChat {
     }
 
     fn list_files(&self, pattern: &str) -> Result<String> {
-        use std::collections::HashMap;
-        const MAX_PER_DIR: usize = 15;
+        // Disallow recursive patterns to prevent massive output
+        if pattern.contains("**") {
+            return Ok("Recursive patterns (**) are not allowed. Use single-level patterns like 'src/*' or 'src/*.rs' instead.".to_string());
+        }
 
         let glob_pattern = self.work_dir.join(pattern);
-        let mut dir_files: HashMap<String, Vec<String>> = HashMap::new();
+        let mut files = Vec::new();
 
         for entry in glob::glob(glob_pattern.to_str().unwrap())? {
             if let Ok(path) = entry {
                 if let Ok(relative) = path.strip_prefix(&self.work_dir) {
-                    let path_str = relative.display().to_string();
-
-                    // Get directory (or "." for root files)
-                    let dir = if let Some(parent) = relative.parent() {
-                        if parent.as_os_str().is_empty() {
-                            ".".to_string()
-                        } else {
-                            parent.display().to_string()
-                        }
-                    } else {
-                        ".".to_string()
-                    };
-
-                    dir_files.entry(dir).or_insert_with(Vec::new).push(path_str);
+                    files.push(relative.display().to_string());
                 }
             }
         }
 
-        if dir_files.is_empty() {
-            return Ok("No files found matching pattern".to_string());
-        }
-
-        let mut result = Vec::new();
-        let mut total_files = 0;
-        let mut total_hidden = 0;
-
-        // Sort directories for consistent output
-        let mut dirs: Vec<_> = dir_files.keys().cloned().collect();
-        dirs.sort();
-
-        for dir in dirs {
-            if let Some(files) = dir_files.get(&dir) {
-                let count = files.len();
-                total_files += count;
-
-                if count > MAX_PER_DIR {
-                    // Show first MAX_PER_DIR files
-                    result.push(format!("{}/ ({} files, showing first {}):", dir, count, MAX_PER_DIR));
-                    for file in files.iter().take(MAX_PER_DIR) {
-                        result.push(format!("  {}", file));
-                    }
-                    result.push(format!("  ... and {} more files in this directory", count - MAX_PER_DIR));
-                    total_hidden += count - MAX_PER_DIR;
-                } else {
-                    // Show all files
-                    if count > 1 {
-                        result.push(format!("{}/ ({} files):", dir, count));
-                    }
-                    for file in files {
-                        result.push(format!("  {}", file));
-                    }
-                }
-                result.push("".to_string()); // Empty line between directories
-            }
-        }
-
-        if total_hidden > 0 {
-            result.push(format!("Total: {} files ({} hidden for brevity)", total_files, total_hidden));
+        if files.is_empty() {
+            Ok("No files found matching pattern".to_string())
         } else {
-            result.push(format!("Total: {} files", total_files));
+            files.sort();
+            Ok(format!("{}\n\nTotal: {} items", files.join("\n"), files.len()))
         }
-
-        Ok(result.join("\n"))
     }
 
     fn switch_model(&mut self, model_str: &str, reason: &str) -> Result<String> {
