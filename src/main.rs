@@ -11,6 +11,7 @@ use tokio::time::sleep;
 use std::io::BufReader;
 use std::fs::File;
 use std::io::prelude::*;
+use std::io::Write;
 
 
 const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
@@ -153,6 +154,11 @@ struct EditFileArgs {
 struct SwitchModelArgs {
     model: String,
     reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunCommandArgs {
+    command: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -374,6 +380,23 @@ impl KimiChat {
                     }),
                 },
             },
+            Tool {
+                tool_type: "function".to_string(),
+                function: FunctionDef {
+                    name: "run_command".to_string(),
+                    description: "Run a shell command interactively - always asks user confirmation before executing".to_string(),
+                    parameters: serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "command": {
+                                "type": "string",
+                                "description": "Shell command to run"
+                            }
+                        },
+                        "required": ["command"]
+                    }),
+                },
+            },
         ]
     }
 
@@ -476,6 +499,52 @@ impl KimiChat {
         ))
     }
 
+    fn run_command(&self, command: &str) -> Result<String> {
+        // Ask user for confirmation interactively
+        print!(
+            "{} {}",
+            "Run command:".yellow(),
+            command.cyan()
+        );
+        std::io::stdout().flush()?;
+        
+        print!(" {} (y/N): ", "Execute?".yellow());
+        std::io::stdout().flush()?;
+        
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        
+        match input.trim().to_lowercase().as_str() {
+            "y" | "yes" => {
+                println!("{} {}", "Running:".green(), command.cyan());
+                
+                // Execute the command
+                let output = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(command)
+                    .current_dir(&self.work_dir)
+                    .output()
+                    .with_context(|| format!("Failed to run command: {}", command))?;
+                
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                
+                let mut result = String::new();
+                if !stdout.is_empty() {
+                    result.push_str(&stdout);
+                }
+                if !stderr.is_empty() {
+                    result.push_str(&stderr);
+                }
+                
+                Ok(result)
+            }
+            _ => {
+                Ok("Command cancelled".to_string())
+            }
+        }
+    }
+
     fn search_files(
         &self,
         pattern: &str,
@@ -573,6 +642,10 @@ impl KimiChat {
             "switch_model" => {
                 let args: SwitchModelArgs = serde_json::from_str(arguments)?;
                 self.switch_model(&args.model, &args.reason)
+            }
+            "run_command" => {
+                let args: RunCommandArgs = serde_json::from_str(arguments)?;
+                self.run_command(&args.command)
             }
             _ => anyhow::bail!("Unknown tool: {}", name),
         }
