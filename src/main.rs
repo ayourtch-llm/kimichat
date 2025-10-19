@@ -12,10 +12,6 @@ use tokio::time::sleep;
 const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MAX_CONTEXT_TOKENS: usize = 100_000; // Keep conversation under this to avoid rate limits
 const MAX_RETRIES: u32 = 3;
-const ENABLE_PREPROCESSING: bool = true; // Enable local model preprocessing
-const MAX_PREPROCESS_LENGTH: usize = 2000; // Max characters to send to local model
-const OLLAMA_API_URL: &str = "http://localhost:11434/api/generate";
-const OLLAMA_MODEL: &str = "gpt-oss:20b"; // Local Ollama model for preprocessing
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum ModelType {
@@ -155,90 +151,6 @@ struct SwitchModelArgs {
     reason: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct PreprocessArgs {
-    tool_name: String,
-    tool_result: String,
-    instructions: String,
-}
-
-struct LocalPreprocessor {
-    client: reqwest::Client,
-}
-
-impl LocalPreprocessor {
-    async fn load() -> Result<Self> {
-        println!("{}", "🔄 Checking Ollama connection (gpt-oss:20b)...".bright_cyan());
-
-        let client = reqwest::Client::new();
-
-        // Test Ollama connection
-        let test_response = client
-            .post(OLLAMA_API_URL)
-            .json(&serde_json::json!({
-                "model": OLLAMA_MODEL,
-                "prompt": "test",
-                "stream": false
-            }))
-            .send()
-            .await;
-
-        match test_response {
-            Ok(_) => {
-                println!("{}", "✅ Ollama is running and gpt-oss:20b is available!".green());
-                Ok(Self { client })
-            }
-            Err(e) => {
-                Err(anyhow::anyhow!(
-                    "Failed to connect to Ollama. Is it running? Error: {}\nMake sure to run: ollama run gpt-oss:20b", e
-                ))
-            }
-        }
-    }
-
-    async fn preprocess(&self, tool_name: &str, tool_result: &str, instructions: &str) -> Result<String> {
-        let result_ref = format!("${}_result", tool_name);
-        let prompt = format!(
-            "You are a preprocessing assistant. Process tool outputs according to instructions.\n\nTool: {}\nTool Result (stored as {}):\n{}\n\nInstructions: {}\n\nProvide a concise response following the instructions:",
-            tool_name,
-            result_ref,
-            if tool_result.len() > MAX_PREPROCESS_LENGTH {
-                format!("{}... [truncated]", &tool_result[..MAX_PREPROCESS_LENGTH])
-            } else {
-                tool_result.to_string()
-            },
-            instructions
-        );
-
-        println!("{}", "🤖 Running local GPT-OSS-20B preprocessing...".bright_magenta());
-
-        let response = self.client
-            .post(OLLAMA_API_URL)
-            .json(&serde_json::json!({
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": false,
-                "options": {
-                    "temperature": 0.7,
-                    "num_predict": 512
-                }
-            }))
-            .send()
-            .await
-            .context("Failed to send request to Ollama")?;
-
-        #[derive(Deserialize)]
-        struct OllamaResponse {
-            response: String,
-        }
-
-        let result: OllamaResponse = response.json().await
-            .context("Failed to parse Ollama response")?;
-
-        Ok(result.response)
-    }
-}
-
 struct KimiChat {
     api_key: String,
     work_dir: PathBuf,
@@ -246,24 +158,10 @@ struct KimiChat {
     messages: Vec<Message>,
     current_model: ModelType,
     total_tokens_used: usize,
-    preprocessor: Option<LocalPreprocessor>,
 }
 
 impl KimiChat {
-    async fn new(api_key: String, work_dir: PathBuf) -> Self {
-        // Load local preprocessor if enabled
-        let preprocessor = if ENABLE_PREPROCESSING {
-            match LocalPreprocessor::load().await {
-                Ok(p) => Some(p),
-                Err(e) => {
-                    eprintln!("{} Failed to load local model: {}. Continuing without preprocessing.", "⚠️".yellow(), e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
+    fn new(api_key: String, work_dir: PathBuf) -> Self {
         let mut chat = Self {
             api_key,
             work_dir,
@@ -271,7 +169,6 @@ impl KimiChat {
             messages: Vec::new(),
             current_model: ModelType::Kimi,
             total_tokens_used: 0,
-            preprocessor,
         };
 
         // Add system message to inform the model about capabilities
@@ -282,9 +179,6 @@ impl KimiChat {
                 You are currently running as {}. You can switch to other models when appropriate:\n\
                 - kimi (Kimi-K2-Instruct-0905): Good for general tasks, coding, and quick responses\n\
                 - gpt-oss (GPT-OSS-120B): Good for complex reasoning, analysis, and advanced problem-solving\n\n\
-                You also have access to a local preprocessing model that can process tool outputs with custom instructions.\n\
-                Use the 'preprocess_tool_output' tool when you need to transform/filter/summarize tool results before seeing them.\n\
-                The tool result will be available as ${{tool_name}}_result in the preprocessing prompt.\n\n\
                 Use the switch_model tool when you believe another model would be better suited for the user's request. \
                 The conversation history will be preserved when switching models.",
                 chat.current_model.display_name()
@@ -401,31 +295,6 @@ impl KimiChat {
                     }),
                 },
             },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "preprocess_tool_output".to_string(),
-                    description: "Use a local small model to preprocess/transform/filter tool outputs before receiving them. The tool result will be stored as ${tool_name}_result variable. Use this to summarize long outputs, extract specific information, or transform data.".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "tool_name": {
-                                "type": "string",
-                                "description": "The name of the tool whose output should be processed (e.g., 'list_files', 'read_file')"
-                            },
-                            "tool_result": {
-                                "type": "string",
-                                "description": "The raw output from the tool"
-                            },
-                            "instructions": {
-                                "type": "string",
-                                "description": "Instructions for how to process the tool output (e.g., 'Summarize the file content', 'Extract only function names', 'List only .rs files')"
-                            }
-                        },
-                        "required": ["tool_name", "tool_result", "instructions"]
-                    }),
-                },
-            },
         ]
     }
 
@@ -503,7 +372,7 @@ impl KimiChat {
         ))
     }
 
-    async fn execute_tool(&mut self, name: &str, arguments: &str) -> Result<String> {
+    fn execute_tool(&mut self, name: &str, arguments: &str) -> Result<String> {
         match name {
             "read_file" => {
                 let args: ReadFileArgs = serde_json::from_str(arguments)?;
@@ -524,15 +393,6 @@ impl KimiChat {
             "switch_model" => {
                 let args: SwitchModelArgs = serde_json::from_str(arguments)?;
                 self.switch_model(&args.model, &args.reason)
-            }
-            "preprocess_tool_output" => {
-                let args: PreprocessArgs = serde_json::from_str(arguments)?;
-
-                if let Some(ref preprocessor) = self.preprocessor {
-                    preprocessor.preprocess(&args.tool_name, &args.tool_result, &args.instructions).await
-                } else {
-                    anyhow::bail!("Local preprocessing model not available. Enable ENABLE_PREPROCESSING or check model loading.")
-                }
             }
             _ => anyhow::bail!("Unknown tool: {}", name),
         }
@@ -679,7 +539,7 @@ impl KimiChat {
                     let result = match self.execute_tool(
                         &tool_call.function.name,
                         &tool_call.function.arguments,
-                    ).await {
+                    ) {
                         Ok(r) => r,
                         Err(e) => format!("Error: {}", e),
                     };
@@ -718,7 +578,7 @@ async fn main() -> Result<()> {
     println!("{}", "Models can switch between Kimi-K2-Instruct-0905 and GPT-OSS-120B automatically".bright_black());
     println!("{}", "Type 'exit' or 'quit' to exit\n".bright_black());
 
-    let mut chat = KimiChat::new(api_key, work_dir).await;
+    let mut chat = KimiChat::new(api_key, work_dir);
     let mut rl = DefaultEditor::new()?;
 
     loop {
