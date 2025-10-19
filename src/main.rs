@@ -911,6 +911,25 @@ async fn main() -> Result<()> {
     let mut chat = KimiChat::new(api_key, work_dir);
     let mut rl = DefaultEditor::new()?;
 
+    // Read kimi.md if it exists to get project context
+    let kimi_context = if let Ok(kimi_content) = chat.read_file("kimi.md") {
+        println!("{} {}", "📖".bright_cyan(), "Reading project context from kimi.md...".bright_black());
+        kimi_content
+    } else {
+        println!("{} {}", "📖".bright_cyan(), "No kimi.md found. Starting fresh.".bright_black());
+        String::new()
+    };
+
+    if !kimi_context.is_empty() {
+        chat.messages.push(Message {
+            role: "system".to_string(),
+            content: format!("Project context: {}", kimi_context),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        });
+    }
+
     loop {
         let model_indicator = format!("[{}]", chat.current_model.display_name()).bright_magenta();
         let readline = rl.readline(&format!("{} {} ", model_indicator, "You:".bright_green().bold()));
