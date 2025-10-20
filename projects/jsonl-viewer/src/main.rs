@@ -205,7 +205,30 @@ fn draw_entry_list(entries: &[JsonlEntry], selected: usize, show_only_invalid: b
             let mut parts = vec![];
             
             if let Some(ref timestamp) = entry.timestamp {
-                parts.push(format!("[{}]", timestamp));
+                // Show only time portion without date
+                let time_part = if timestamp.contains('T') {
+                    // Extract time part from ISO format like "2024-10-20T14:30:45"
+                    timestamp.split('T').nth(1).unwrap_or(timestamp)
+                } else if timestamp.contains(' ') {
+                    // Extract time part from format like "2024-10-20 14:30:45"
+                    timestamp.split(' ').nth(1).unwrap_or(timestamp)
+                } else {
+                    timestamp
+                };
+                // Keep only HH:MM:SS (hour, minute, second)
+                let short_timestamp = {
+                    let parts: Vec<&str> = time_part.split(':').collect();
+                    if parts.len() >= 3 {
+                        // Split the third part to extract just seconds (before any decimal)
+                        let seconds_part = parts[2].split('.').next().unwrap_or(parts[2]);
+                        format!("{}:{}:{}", parts[0], parts[1], seconds_part)
+                    } else if parts.len() >= 2 {
+                        format!("{}:{}", parts[0], parts[1])
+                    } else {
+                        time_part.to_string()
+                    }
+                };
+                parts.push(format!("[{}]", short_timestamp));
             }
             
             if let Some(ref entry_type) = entry.entry_type {
