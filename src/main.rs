@@ -1875,14 +1875,31 @@ impl KimiChat {
                         Err(e) => {
                             let error_msg = e.to_string();
                             // Make cancellation errors very explicit to the model
-                            if error_msg.contains("cancelled by user") || error_msg.contains("Edit cancelled") {
+                            if error_msg.contains("cancelled by user") ||
+                               error_msg.contains("Edit cancelled") ||
+                               error_msg.contains("Command cancelled") {
+                                // Extract user's comment if present
+                                let user_feedback = if error_msg.contains(" - ") {
+                                    error_msg.split(" - ").skip(1).collect::<Vec<_>>().join(" - ")
+                                } else {
+                                    String::new()
+                                };
+
+                                let feedback_section = if !user_feedback.is_empty() {
+                                    format!("\n\nUSER'S FEEDBACK: {}\nThis feedback explains why the operation was cancelled. Address this concern in your next approach.", user_feedback)
+                                } else {
+                                    String::new()
+                                };
+
                                 format!(
                                     "OPERATION CANCELLED BY USER. The user explicitly cancelled this operation. \
                                     DO NOT retry this same approach. Please acknowledge the cancellation and either:\n\
                                     1. Ask the user what they would like to do instead\n\
-                                    2. Try a completely different approach\n\
-                                    3. Stop if this was the only viable option\n\
-                                    \nOriginal error: {}",
+                                    2. Try a completely different approach that addresses the user's concerns\n\
+                                    3. Stop if this was the only viable option\
+                                    {}\n\
+                                    \nOriginal message: {}",
+                                    feedback_section,
                                     error_msg
                                 )
                             } else {
