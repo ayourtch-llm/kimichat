@@ -312,6 +312,8 @@ impl PlanningCoordinator {
                 role: "assistant".to_string(),
                 content: format!("Agent '{}' completed task: {}", agent.name(), task.description),
                 tool_calls: None,
+                tool_call_id: None,
+                name: None,
             });
         }
 

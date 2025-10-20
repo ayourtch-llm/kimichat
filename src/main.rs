@@ -669,6 +669,8 @@ impl KimiChat {
                             },
                         }).collect()
                     }),
+                    tool_call_id: msg.tool_call_id.clone(),
+                    name: msg.name.clone(),
                 }
             }).collect();
 

@@ -54,12 +54,16 @@ impl LlmClient for GroqLlmClient {
                         },
                     }).collect()
                 }),
+                tool_call_id: choice.message.tool_call_id,
+                name: choice.message.name,
             }
         } else {
             ChatMessage {
                 role: "assistant".to_string(),
                 content: "No response generated".to_string(),
                 tool_calls: None,
+                tool_call_id: None,
+                name: None,
             }
         };
 
@@ -124,8 +128,8 @@ impl GroqLlmClient {
                         },
                     }).collect()
                 }),
-                tool_call_id: None,
-                name: None,
+                tool_call_id: msg.tool_call_id,
+                name: msg.name,
             }
         }).collect();
 

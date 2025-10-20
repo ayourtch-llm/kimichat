@@ -4,6 +4,7 @@ use crate::core::tool_registry::ToolRegistry;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
+use colored::Colorize;
 
 /// Factory for creating agents from configuration
 pub struct AgentFactory {
@@ -101,6 +102,8 @@ impl ConfigurableAgent {
                 role: "system".to_string(),
                 content: self.config.system_prompt.clone(),
                 tool_calls: None,
+                tool_call_id: None,
+                name: None,
             }
         ];
 
@@ -112,31 +115,128 @@ impl ConfigurableAgent {
             role: "user".to_string(),
             content: format!("Task: {}\n\nPlease execute this task using your available tools.", task.description),
             tool_calls: None,
+            tool_call_id: None,
+            name: None,
         });
 
-        // Execute with LLM and tool calling
-        match self.llm_client.chat(messages, available_tools).await {
-            Ok(response) => {
-                let execution_time = start_time.elapsed().as_millis() as u64;
+        // Execute with LLM and tool calling loop
+        let max_iterations = 10;
+        for iteration in 0..max_iterations {
+            println!("{} Iteration {}/{}", "🔄".cyan(), iteration + 1, max_iterations);
 
-                crate::agents::agent::AgentResult::success(
-                    response.message.content,
-                    task.id.clone(),
-                    self.name().to_string(),
-                )
-                .with_execution_time(execution_time)
+            // Warn the model when approaching iteration limit
+            let mut current_messages = messages.clone();
+            if iteration >= max_iterations - 2 {
+                let remaining = max_iterations - iteration;
+                current_messages.push(crate::agents::agent::ChatMessage {
+                    role: "system".to_string(),
+                    content: format!(
+                        "⚠️ WARNING: You have {} iteration(s) remaining before the maximum is reached. \
+                        You must provide your final response in the NEXT iteration. \
+                        Do NOT call any more tools - provide your summary/answer now based on the information you've already gathered.",
+                        remaining
+                    ),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    name: None,
+                });
             }
-            Err(e) => {
-                let execution_time = start_time.elapsed().as_millis() as u64;
 
-                crate::agents::agent::AgentResult::error(
-                    format!("LLM execution failed: {}", e),
-                    task.id.clone(),
-                    self.name().to_string(),
-                )
-                .with_execution_time(execution_time)
+            match self.llm_client.chat(current_messages.clone(), available_tools.clone()).await {
+                Ok(response) => {
+                    // Check if LLM wants to call tools
+                    if let Some(tool_calls) = &response.message.tool_calls {
+                        println!("{} LLM requested {} tool call(s)", "🔧".yellow(), tool_calls.len());
+
+                        // Add assistant message with tool calls
+                        messages.push(response.message.clone());
+
+                        // Execute each tool call
+                        for tool_call in tool_calls {
+                            let tool_name = &tool_call.function.name;
+                            let tool_args = &tool_call.function.arguments;
+
+                            println!("  {} Calling tool: {} with args: {}", "▶️".blue(), tool_name,
+                                if tool_args.len() > 100 { format!("{}...", &tool_args[..100]) } else { tool_args.clone() });
+
+                            // Execute tool using registry
+                            let tool_result = if let Some(tool) = self.tool_registry.get_tool(tool_name) {
+                                // Parse arguments and execute
+                                match crate::core::ToolParameters::from_json(tool_args) {
+                                    Ok(params) => {
+                                        let tool_context = crate::core::tool_context::ToolContext::new(
+                                            context.workspace_dir.clone(),
+                                            context.session_id.clone(),
+                                        );
+                                        tool.execute(params, &tool_context).await
+                                    }
+                                    Err(e) => {
+                                        crate::core::tool::ToolResult::error(format!("Failed to parse tool arguments: {}", e))
+                                    }
+                                }
+                            } else {
+                                crate::core::tool::ToolResult::error(format!("Tool '{}' not found", tool_name))
+                            };
+
+                            let result_preview = if tool_result.success {
+                                if tool_result.content.len() > 200 {
+                                    format!("{}...", &tool_result.content[..200])
+                                } else {
+                                    tool_result.content.clone()
+                                }
+                            } else {
+                                tool_result.error.clone().unwrap_or_else(|| "Unknown error".to_string())
+                            };
+                            println!("  {} Tool result: {}", if tool_result.success { "✅" } else { "❌" }, result_preview);
+
+                            // Add tool result to conversation
+                            messages.push(crate::agents::agent::ChatMessage {
+                                role: "tool".to_string(),
+                                content: if tool_result.success {
+                                    tool_result.content
+                                } else {
+                                    tool_result.error.unwrap_or_else(|| "Unknown error".to_string())
+                                },
+                                tool_calls: None,
+                                tool_call_id: Some(tool_call.id.clone()),
+                                name: Some(tool_name.clone()),
+                            });
+                        }
+
+                        // Continue loop to get next LLM response
+                        continue;
+                    } else {
+                        // No tool calls - return final response
+                        println!("{} LLM returned final response (length: {})", "✅".green(), response.message.content.len());
+                        let execution_time = start_time.elapsed().as_millis() as u64;
+                        return crate::agents::agent::AgentResult::success(
+                            response.message.content,
+                            task.id.clone(),
+                            self.name().to_string(),
+                        )
+                        .with_execution_time(execution_time);
+                    }
+                }
+                Err(e) => {
+                    let execution_time = start_time.elapsed().as_millis() as u64;
+                    return crate::agents::agent::AgentResult::error(
+                        format!("LLM execution failed: {}", e),
+                        task.id.clone(),
+                        self.name().to_string(),
+                    )
+                    .with_execution_time(execution_time);
+                }
             }
         }
+
+        // Max iterations reached
+        let execution_time = start_time.elapsed().as_millis() as u64;
+        crate::agents::agent::AgentResult::error(
+            format!("Max iterations ({}) reached without final response", max_iterations),
+            task.id.clone(),
+            self.name().to_string(),
+        )
+        .with_execution_time(execution_time)
     }
 }
 
