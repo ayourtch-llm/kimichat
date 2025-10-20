@@ -1401,10 +1401,14 @@ impl KimiChat {
             name: None,
         });
 
-        loop {
-            // Summarize and trim history to keep context manageable
-            self.summarize_and_trim_history().await?;
+        // Summarize ONCE before starting the tool-calling loop, not during it
+        // This prevents discarding recent tool results mid-conversation
+        self.summarize_and_trim_history().await?;
 
+        let mut tool_call_iterations = 0;
+        const MAX_TOOL_ITERATIONS: usize = 10; // Prevent infinite tool-calling loops
+
+        loop {
             let (response, usage, current_model, messages) = self.call_api(&self.messages).await?;
             self.messages = messages;
             if self.current_model != current_model {
@@ -1426,14 +1430,43 @@ impl KimiChat {
             }
 
             if let Some(tool_calls) = &response.tool_calls {
+                tool_call_iterations += 1;
+
+                // Prevent infinite loops of tool calls
+                if tool_call_iterations > MAX_TOOL_ITERATIONS {
+                    eprintln!(
+                        "{} Tool calling loop detected ({} iterations). Breaking out.",
+                        "⚠️".yellow(),
+                        MAX_TOOL_ITERATIONS
+                    );
+                    self.messages.push(Message {
+                        role: "assistant".to_string(),
+                        content: format!(
+                            "I apologize, but I seem to be stuck in a loop calling tools repeatedly. \
+                            I've called tools {} times for this request. Please try rephrasing your question \
+                            or break it down into smaller steps.",
+                            tool_call_iterations
+                        ),
+                        tool_calls: None,
+                        tool_call_id: None,
+                        name: None,
+                    });
+                    return Ok(format!(
+                        "Tool calling loop detected after {} iterations. Please try a different approach.",
+                        tool_call_iterations
+                    ));
+                }
+
                 self.messages.push(response.clone());
 
                 for tool_call in tool_calls {
                     println!(
-                        "{} {} with args: {}",
+                        "{} {} with args: {} (iteration {}/{})",
                         "🔧 Calling tool:".yellow(),
                         tool_call.function.name.cyan(),
-                        tool_call.function.arguments.bright_black()
+                        tool_call.function.arguments.bright_black(),
+                        tool_call_iterations,
+                        MAX_TOOL_ITERATIONS
                     );
 
                     let result = match self.execute_tool(
