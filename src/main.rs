@@ -20,10 +20,12 @@ use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 use std::future::Future;
 use std::pin::Pin;
+use crate::preview::two_word_preview;
 
 
 mod logging;
 mod open_file;
+mod preview;
 use logging::ConversationLogger;
 
 
@@ -47,6 +49,14 @@ struct Cli {
     /// Generate shell completions
     #[arg(long, value_enum)]
     generate: Option<Shell>,
+    
+    /// Run in summary mode – give a short description of the task.
+    #[arg(long, value_name = "TEXT")]
+    task: Option<String>,
+    
+    /// Pretty‑print the JSON output (only useful with --task)
+    #[arg(long)]
+    pretty: bool,
 }
 
 #[derive(Subcommand)]
@@ -1276,12 +1286,13 @@ impl KimiChat {
                 let status = response.status();
                 let error_body = response.text().await.unwrap_or_else(|_| "Unable to read error body".to_string());
 
-                // Check if this is a tool hallucination error from GPT-OSS
-                if status == 400 && error_body.contains("tool_use_failed") && error_body.contains("attempted to call tool") {
-                    eprintln!("{}", "❌ Tool hallucination detected!".red().bold());
+                // Check if this is a tool-related error
+                if status == 400 && error_body.contains("tool_use_failed") {
+                    eprintln!("{}", "❌ Tool calling error detected!".red().bold());
                     eprintln!("{}", error_body.yellow());
 
-                    if self.current_model == ModelType::GptOss {
+                    // Check for GPT-OSS hallucinating non-existent tools
+                    if error_body.contains("attempted to call tool") && current_model == ModelType::GptOss {
                         eprintln!("{}", "🔄 GPT-OSS-120B attempted to use non-existent tool. Switching to Kimi and retrying...".bright_cyan());
 
                         // Switch to Kimi
@@ -1302,12 +1313,45 @@ impl KimiChat {
                                     - list_files: List files (single-level patterns only, no **)\n\
                                     - switch_model: Switch between models\n\n\
                                     IMPORTANT: Only use the exact tool names listed above. Do not make up tool names.",
-                                    self.current_model.display_name()
+                                    current_model.display_name()
                                 );
                             }
                         }
 
                         // Retry with Kimi - continue the loop to retry
+                        retry_count = 0; // Reset retry count for new model
+                        continue;
+                    }
+                    // Check for Kimi generating malformed tool calls
+                    else if error_body.contains("Failed to call a function") && current_model == ModelType::Kimi {
+                        eprintln!("{}", "🔄 Kimi-K2 generated malformed tool call. Switching to GPT-OSS and retrying...".bright_cyan());
+
+                        // Switch to GPT-OSS
+                        current_model = ModelType::GptOss;
+
+                        // Update system message
+                        if let Some(sys_msg) = messages.first_mut() {
+                            if sys_msg.role == "system" {
+                                sys_msg.content = format!(
+                                    "You are an AI assistant with access to file operations and model switching capabilities. \
+                                    You are currently running as {}. You can switch to other models when appropriate:\n\
+                                    - kimi (Kimi-K2-Instruct-0905): Good for general tasks, coding, and quick responses\n\
+                                    - gpt-oss (GPT-OSS-120B): Good for complex reasoning, analysis, and advanced problem-solving\n\n\
+                                    Available tools (use ONLY these exact names):\n\
+                                    - read_file: Read file contents\n\
+                                    - write_file: Write/create a file\n\
+                                    - edit_file: Edit existing file by replacing content\n\
+                                    - list_files: List files (single-level patterns only, no **)\n\
+                                    - switch_model: Switch between models\n\n\
+                                    CRITICAL WARNING: If you attempt to call ANY tool not listed above (such as 'edit', 'repo_browser.search', \
+                                    'repo_browser.open_file', or any other made-up tool name), you will be IMMEDIATELY switched to the Kimi model \
+                                    and your request will be retried. Use ONLY the exact tool names listed above.",
+                                    current_model.display_name()
+                                );
+                            }
+                        }
+
+                        // Retry with GPT-OSS - continue the loop to retry
                         retry_count = 0; // Reset retry count for new model
                         continue;
                     }

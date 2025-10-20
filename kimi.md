@@ -17,7 +17,9 @@ kimi-chat is a Rust-based CLI application that provides a Claude Code-like exper
 kimichat/
 ├── Cargo.toml          # Dependencies and package configuration
 ├── src/
-│   └── main.rs         # Main application (~600 lines)
+│   ├── main.rs         # Main application
+│   ├── logging.rs      # Conversation logging
+│   └── open_file.rs    # File opening utilities
 ├── workspace/          # Working directory (auto-created)
 ├── README.md           # Documentation
 ├── .env.example        # Environment configuration
@@ -39,8 +41,10 @@ kimichat/
 - **anyhow**: Error handling
 - **dotenvy**: Environment variables
 - **regex**: Regular expressions
-- **dotenvy**: Environment variables
-- **regex**: Regular expressions
+- **chrono**: Date/time handling
+- **thiserror**: Error handling
+- **clap**: Command line parsing
+- **similar**: Text diffing
 
 ### Models
 - **Kimi-K2-Instruct-0905**: General tasks, coding, quick responses
@@ -111,6 +115,8 @@ cargo run
 - **execute_tool**: Tool execution with validation
 - **switch_model**: Model switching with reason tracking
 - **file operations**: Read/write/edit/list files with safety checks
+- **run_command**: Interactive command execution
+- **search_files**: File search with regex support
 
 ## Safety Features
 
