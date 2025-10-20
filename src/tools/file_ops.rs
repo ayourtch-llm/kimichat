@@ -4,6 +4,8 @@ use crate::open_file;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs;
+use colored::Colorize;
+use rustyline::DefaultEditor;
 
 /// Tool for opening files with optional line range
 pub struct OpenFileTool;
@@ -207,13 +209,57 @@ impl Tool for EditFileTool {
             return ToolResult::error(format!("Old content not found in file: {}", file_path));
         }
 
-        // Replace content
+        // Calculate replacement
         let new_content_full = current_content.replace(&old_content, &new_content);
+        let occurrences = current_content.matches(&old_content).count();
 
-        // Write back to file
-        match fs::write(&full_path, new_content_full) {
-            Ok(_) => ToolResult::success(format!("Successfully edited file: {}", file_path)),
-            Err(e) => ToolResult::error(format!("Failed to write file: {}", e)),
+        // Show diff and ask for confirmation
+        println!("{}", "═".repeat(60).bright_blue());
+        println!("{} {}", "📝 Editing:".bright_cyan().bold(), file_path.bright_white());
+        println!("{}", "═".repeat(60).bright_black());
+
+        // Simple diff display
+        println!("{}", "─ Old content:".red());
+        for line in old_content.lines() {
+            println!("{} {}", "-".red(), line);
+        }
+        println!();
+        println!("{}", "+ New content:".green());
+        for line in new_content.lines() {
+            println!("{} {}", "+".green(), line);
+        }
+        println!("{}", "═".repeat(60).bright_black());
+
+        if occurrences > 1 {
+            println!("{}", format!("⚠️  Warning: {} occurrences will be replaced", occurrences).yellow());
+        }
+
+        // Ask for confirmation
+        println!("\n{}", "Apply these changes? [Y/n]".bright_green().bold());
+
+        let mut rl = match DefaultEditor::new() {
+            Ok(rl) => rl,
+            Err(e) => return ToolResult::error(format!("Failed to create readline editor: {}", e)),
+        };
+
+        let response = match rl.readline(">>> ") {
+            Ok(resp) => resp,
+            Err(_) => return ToolResult::error("Edit cancelled by user".to_string()),
+        };
+
+        let response = response.trim().to_lowercase();
+
+        match response.as_str() {
+            "" | "y" | "yes" => {
+                // Write back to file
+                match fs::write(&full_path, new_content_full) {
+                    Ok(_) => ToolResult::success(format!("✅ Successfully edited {} ({} replacement(s))", file_path, occurrences)),
+                    Err(e) => ToolResult::error(format!("Failed to write file: {}", e)),
+                }
+            }
+            _ => {
+                ToolResult::error("Edit cancelled by user".to_string())
+            }
         }
     }
 }
