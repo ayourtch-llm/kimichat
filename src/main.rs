@@ -1426,7 +1426,9 @@ impl KimiChat {
         self.summarize_and_trim_history().await?;
 
         let mut tool_call_iterations = 0;
-        const MAX_TOOL_ITERATIONS: usize = 10; // Prevent infinite tool-calling loops
+        let mut recent_tool_calls: Vec<String> = Vec::new(); // Track recent tool calls
+        const MAX_TOOL_ITERATIONS: usize = 25; // Allow more iterations for complex tasks
+        const LOOP_DETECTION_WINDOW: usize = 6; // Check last 6 tool calls
 
         loop {
             let (response, usage, current_model, messages) = self.call_api(&self.messages).await?;
@@ -1452,19 +1454,56 @@ impl KimiChat {
             if let Some(tool_calls) = &response.tool_calls {
                 tool_call_iterations += 1;
 
-                // Prevent infinite loops of tool calls
+                // Check for repeated identical tool calls (actual loop detection)
+                let tool_signature = tool_calls.iter()
+                    .map(|tc| format!("{}:{}", tc.function.name, tc.function.arguments))
+                    .collect::<Vec<_>>()
+                    .join("|");
+
+                recent_tool_calls.push(tool_signature.clone());
+
+                // Keep only recent tool calls
+                if recent_tool_calls.len() > LOOP_DETECTION_WINDOW {
+                    recent_tool_calls.remove(0);
+                }
+
+                // Detect if the same tool call appears too many times in the recent window
+                let repetition_count = recent_tool_calls.iter()
+                    .filter(|&sig| sig == &tool_signature)
+                    .count();
+
+                if repetition_count >= 3 {
+                    eprintln!(
+                        "{} Detected repeated tool call pattern (same call {} times in recent history). Likely stuck in a loop.",
+                        "⚠️".red().bold(),
+                        repetition_count
+                    );
+                    self.messages.push(Message {
+                        role: "assistant".to_string(),
+                        content: format!(
+                            "I apologize, but I'm calling the same tool repeatedly without making progress. \
+                            The tool call pattern is repeating. Please try breaking down your request into smaller, \
+                            more specific steps, or provide additional guidance."
+                        ),
+                        tool_calls: None,
+                        tool_call_id: None,
+                        name: None,
+                    });
+                    return Ok("Repeated tool call pattern detected. Please refine your request.".to_string());
+                }
+
+                // Hard limit check (fallback)
                 if tool_call_iterations > MAX_TOOL_ITERATIONS {
                     eprintln!(
-                        "{} Tool calling loop detected ({} iterations). Breaking out.",
+                        "{} Reached maximum tool call limit ({} iterations).",
                         "⚠️".yellow(),
                         MAX_TOOL_ITERATIONS
                     );
                     self.messages.push(Message {
                         role: "assistant".to_string(),
                         content: format!(
-                            "I apologize, but I seem to be stuck in a loop calling tools repeatedly. \
-                            I've called tools {} times for this request. Please try rephrasing your question \
-                            or break it down into smaller steps.",
+                            "I've made {} tool calls for this request, which is quite a lot. \
+                            I may need you to break this down into smaller tasks or provide more specific direction.",
                             tool_call_iterations
                         ),
                         tool_calls: None,
@@ -1472,7 +1511,7 @@ impl KimiChat {
                         name: None,
                     });
                     return Ok(format!(
-                        "Tool calling loop detected after {} iterations. Please try a different approach.",
+                        "Reached maximum tool call limit ({} iterations). Please simplify your request.",
                         tool_call_iterations
                     ));
                 }
