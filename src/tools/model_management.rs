@@ -6,6 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
+use similar::{ChangeTag, TextDiff};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct EditOperation {
@@ -105,65 +106,27 @@ fn clear_edit_plan(work_dir: &PathBuf) {
     let _ = fs::remove_file(&plan_path); // Ignore errors if file doesn't exist
 }
 
-// Helper function to show unified diff
-fn show_unified_diff(old_content: &str, new_content: &str) -> Vec<String> {
-    let old_lines: Vec<&str> = old_content.lines().collect();
-    let new_lines: Vec<&str> = new_content.lines().collect();
+// Helper function to show unified diff using the similar crate
+fn show_unified_diff(old_content: &str, new_content: &str) -> String {
+    let diff = TextDiff::from_lines(old_content, new_content);
+    let mut output = String::new();
 
-    let mut result = Vec::new();
-    let mut i = 0;
-    let mut j = 0;
-
-    while i < old_lines.len() || j < new_lines.len() {
-        if i < old_lines.len() && j < new_lines.len() && old_lines[i] == new_lines[j] {
-            // Context line (unchanged)
-            result.push(format!("  {}", old_lines[i]));
-            i += 1;
-            j += 1;
-        } else {
-            // Find next matching line
-            let mut found_match = false;
-
-            // Try to find where lines sync up again (look ahead up to 3 lines)
-            for offset in 1..=3 {
-                if i + offset < old_lines.len() && j < new_lines.len() && old_lines[i + offset] == new_lines[j] {
-                    // Lines were removed
-                    for k in 0..offset {
-                        if i + k < old_lines.len() {
-                            result.push(format!("{} {}", "-".red(), old_lines[i + k]));
-                        }
-                    }
-                    i += offset;
-                    found_match = true;
-                    break;
-                } else if j + offset < new_lines.len() && i < old_lines.len() && old_lines[i] == new_lines[j + offset] {
-                    // Lines were added
-                    for k in 0..offset {
-                        if j + k < new_lines.len() {
-                            result.push(format!("{} {}", "+".green(), new_lines[j + k]));
-                        }
-                    }
-                    j += offset;
-                    found_match = true;
-                    break;
-                }
-            }
-
-            if !found_match {
-                // No match found, treat as replacement
-                if i < old_lines.len() {
-                    result.push(format!("{} {}", "-".red(), old_lines[i]));
-                    i += 1;
-                }
-                if j < new_lines.len() {
-                    result.push(format!("{} {}", "+".green(), new_lines[j]));
-                    j += 1;
-                }
+    for (idx, group) in diff.grouped_ops(2).iter().enumerate() {
+        if idx > 0 {
+            output.push_str(&format!("{}\n", "---".bright_black()));
+        }
+        for op in group {
+            for change in diff.iter_inline_changes(op) {
+                let (sign, color_fn): (&str, fn(&str) -> colored::ColoredString) = match change.tag() {
+                    ChangeTag::Delete => ("-", |s: &str| s.red()),
+                    ChangeTag::Insert => ("+", |s: &str| s.green()),
+                    ChangeTag::Equal => (" ", |s: &str| s.normal()),
+                };
+                output.push_str(&format!("{}{}", sign, color_fn(&change.to_string())));
             }
         }
     }
-
-    result
+    output
 }
 
 /// Tool for planning multiple file edits
@@ -239,9 +202,13 @@ impl Tool for PlanEditsTool {
             }
 
             // Show unified diff preview
-            let diff_lines = show_unified_diff(&edit.old_content, &edit.new_content);
-            for line in diff_lines {
-                println!("  {}", line);
+            let diff_output = show_unified_diff(&edit.old_content, &edit.new_content);
+            if !diff_output.is_empty() {
+                for line in diff_output.lines() {
+                    println!("  {}", line);
+                }
+            } else {
+                println!("  {}", "(No changes)".bright_black());
             }
 
             validated_edits.push(edit.clone());
