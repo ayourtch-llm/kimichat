@@ -23,6 +23,7 @@ kimichat/
 ├── .env.example        # Environment configuration
 ├── .gitignore          # Git ignore rules
 ├── kimi.md           # Project documentation
+├── how_to_new_tool.md # How to add a new tool
 └── target/           # Build artifacts
 ```
 
