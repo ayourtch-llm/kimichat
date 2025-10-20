@@ -3,6 +3,8 @@ use crate::core::tool_context::ToolContext;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::process::Command as AsyncCommand;
+use colored::Colorize;
+use std::io::Write;
 
 /// Tool for running shell commands
 pub struct RunCommandTool;
@@ -41,6 +43,26 @@ impl Tool for RunCommandTool {
         for pattern in &dangerous_patterns {
             if command.contains(pattern) {
                 return ToolResult::error(format!("Command blocked for security reasons: contains dangerous pattern '{}'", pattern));
+            }
+        }
+
+        // Ask user for confirmation
+        print!("{} {} ", "Run command:".yellow(), command.cyan());
+        std::io::stdout().flush().ok();
+        print!("{} (y/N): ", "Execute?".yellow());
+        std::io::stdout().flush().ok();
+
+        let mut input = String::new();
+        if let Err(e) = std::io::stdin().read_line(&mut input) {
+            return ToolResult::error(format!("Failed to read user input: {}", e));
+        }
+
+        match input.trim().to_lowercase().as_str() {
+            "y" | "yes" => {
+                println!("{} {}", "Running:".green(), command.cyan());
+            }
+            _ => {
+                return ToolResult::error("Command cancelled by user".to_string());
             }
         }
 
