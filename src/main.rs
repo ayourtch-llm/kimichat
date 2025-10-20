@@ -418,8 +418,8 @@ impl KimiChat {
         let base_prompt = format!(
             "You are an AI assistant with access to file operations and model switching capabilities. \
             You are currently running as {}. You can switch to other models when appropriate:\n\
-            - kimi (Kimi-K2-Instruct-0905): Good for general tasks, coding, and quick responses\n\
-            - gpt-oss (GPT-OSS-120B): Good for complex reasoning, analysis, and advanced problem-solving\n\n\
+            - gpt-oss (GPT-OSS-120B): **Preferred for cost efficiency** - significantly cheaper than Kimi while providing good performance for most tasks\n\
+            - kimi (Kimi-K2-Instruct-0905): Use when GPT-OSS struggles or when you need faster responses\n\n\
             Available tools (use ONLY these exact names):\n\
             - read_file: Read entire file contents (always returns full file)\n\
             - open_file: Read specific line range from a file (use when you only need a section)\n\
@@ -469,7 +469,9 @@ impl KimiChat {
             work_dir,
             client: reqwest::Client::new(),
             messages: Vec::new(),
-            current_model: ModelType::Kimi,
+            // Default to GPT-OSS for cost efficiency - it's significantly cheaper than Kimi
+            // while still providing good performance for most tasks
+            current_model: ModelType::GptOss,
             total_tokens_used: 0,
             logger: None,
             pending_edit_plan: None,
@@ -2276,7 +2278,7 @@ async fn main() -> Result<()> {
 
     println!("{}", "🤖 Kimi Chat - Claude Code-like Experience".bright_cyan().bold());
     println!("{}", format!("Working directory: {}", work_dir.display()).bright_black());
-    println!("{}", "Models can switch between Kimi-K2-Instruct-0905 and GPT-OSS-120B automatically".bright_black());
+    println!("{}", "Default model: GPT-OSS-120B (cost-efficient) • Auto-switches to Kimi-K2-Instruct-0905 when needed".bright_black());
 
     if cli.agents {
         println!("{}", "🚀 Multi-Agent System ENABLED - Specialized agents will handle your tasks".green().bold());

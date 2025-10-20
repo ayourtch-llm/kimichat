@@ -209,7 +209,8 @@ pub trait Agent: Send + Sync {
     async fn execute(&self, task: Task, context: &ExecutionContext) -> AgentResult;
 
     /// Get the preferred model for this agent
-    fn preferred_model(&self) -> &str { "kimi" }
+    // Default to GPT-OSS for cost efficiency - significantly cheaper than Kimi
+    fn preferred_model(&self) -> &str { "gpt_oss" }
 
     /// Get the system prompt for this agent
     fn system_prompt(&self) -> &str;
