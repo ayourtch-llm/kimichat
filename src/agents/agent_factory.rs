@@ -96,11 +96,33 @@ impl ConfigurableAgent {
             })
             .collect();
 
-        // Prepare conversation context
+        // Prepare conversation context with iteration management instructions
+        let enhanced_system_prompt = format!(
+            "{}\n\n\
+            ═══════════════════════════════════════════════════════════════\n\
+            📊 ITERATION MANAGEMENT (CRITICAL)\n\
+            ═══════════════════════════════════════════════════════════════\n\
+            You have a DEFAULT LIMIT of 10 iterations (tool call rounds).\n\n\
+            RULES:\n\
+            1. Use tools efficiently - each tool call consumes one iteration\n\
+            2. After 5-7 tool calls, you should be ready to provide your answer\n\
+            3. When you receive a warning about remaining iterations, you MUST:\n\
+               - STOP calling tools immediately\n\
+               - Provide your final answer based on information gathered\n\
+            4. If you genuinely need more iterations for complex tasks:\n\
+               - Use 'request_more_iterations' tool (if available)\n\
+               - Provide strong justification and progress summary\n\
+            5. Running out of iterations WITHOUT answering = FAILURE\n\n\
+            REMEMBER: Your goal is to ANSWER the user's question, not to \n\
+            explore endlessly. Be efficient and decisive.\n\
+            ═══════════════════════════════════════════════════════════════",
+            self.config.system_prompt
+        );
+
         let mut messages = vec![
             crate::agents::agent::ChatMessage {
                 role: "system".to_string(),
-                content: self.config.system_prompt.clone(),
+                content: enhanced_system_prompt,
                 tool_calls: None,
                 tool_call_id: None,
                 name: None,
@@ -120,26 +142,36 @@ impl ConfigurableAgent {
         });
 
         // Execute with LLM and tool calling loop
-        let max_iterations = 10;
-        for iteration in 0..max_iterations {
-            println!("{} Iteration {}/{}", "🔄".cyan(), iteration + 1, max_iterations);
+        let mut max_iterations = 10;
+        let mut iteration = 0;
+        loop {
+            if iteration >= max_iterations {
+                break;
+            }
+
+            iteration += 1; // Increment at the start of each iteration
+            println!("{} Iteration {}/{}", "🔄".cyan(), iteration, max_iterations);
 
             // Warn the model when approaching iteration limit
             let mut current_messages = messages.clone();
-            if iteration >= max_iterations - 2 {
+            if iteration >= max_iterations - 3 {
                 let remaining = max_iterations - iteration;
+                let urgency = if remaining <= 2 { "🚨 CRITICAL" } else { "⚠️ WARNING" };
                 current_messages.push(crate::agents::agent::ChatMessage {
                     role: "system".to_string(),
                     content: format!(
-                        "⚠️ WARNING: You have {} iteration(s) remaining before the maximum is reached. \
-                        You must provide your final response in the NEXT iteration. \
-                        Do NOT call any more tools - provide your summary/answer now based on the information you've already gathered.",
-                        remaining
+                        "{}: Only {} iteration(s) remain before maximum limit!\n\n\
+                        YOU MUST STOP CALLING TOOLS NOW.\n\
+                        Provide your final text response based on information already gathered.\n\
+                        If you call another tool, you may run out of iterations before providing an answer.\n\n\
+                        Summarize what you've found and answer the user's question NOW.",
+                        urgency, remaining
                     ),
                     tool_calls: None,
                     tool_call_id: None,
                     name: None,
                 });
+                println!("{} Injected iteration limit warning to model", "⚠️".yellow());
             }
 
             match self.llm_client.chat(current_messages.clone(), available_tools.clone()).await {
@@ -189,14 +221,33 @@ impl ConfigurableAgent {
                             };
                             println!("  {} Tool result: {}", if tool_result.success { "✅" } else { "❌" }, result_preview);
 
+                            // Check if this is a request_more_iterations tool call
+                            if tool_name == "request_more_iterations" && tool_result.success {
+                                // Parse the approval from the result
+                                if tool_result.content.contains("✅ APPROVED") {
+                                    // Extract the granted iterations from the result
+                                    if let Some(granted_str) = tool_result.content.split("APPROVED: ").nth(1) {
+                                        if let Some(num_str) = granted_str.split(" additional").next() {
+                                            if let Ok(additional) = num_str.trim().parse::<usize>() {
+                                                max_iterations += additional;
+                                                println!("{} Granted {} additional iterations. New limit: {}",
+                                                    "🎁".green(), additional, max_iterations);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             // Add tool result to conversation
+                            let tool_result_content = if tool_result.success {
+                                tool_result.content
+                            } else {
+                                tool_result.error.unwrap_or_else(|| "Unknown error".to_string())
+                            };
+
                             messages.push(crate::agents::agent::ChatMessage {
                                 role: "tool".to_string(),
-                                content: if tool_result.success {
-                                    tool_result.content
-                                } else {
-                                    tool_result.error.unwrap_or_else(|| "Unknown error".to_string())
-                                },
+                                content: tool_result_content,
                                 tool_calls: None,
                                 tool_call_id: Some(tool_call.id.clone()),
                                 name: Some(tool_name.clone()),

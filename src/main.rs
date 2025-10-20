@@ -584,6 +584,9 @@ impl KimiChat {
         registry.register_with_categories(PlanEditsTool, vec!["model_management".to_string()]);
         registry.register_with_categories(ApplyEditPlanTool, vec!["model_management".to_string()]);
 
+        // Register iteration control tools
+        registry.register_with_categories(RequestMoreIterationsTool, vec!["agent_control".to_string()]);
+
         registry
     }
 
