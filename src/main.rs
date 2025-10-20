@@ -387,8 +387,8 @@ impl KimiChat {
             - kimi (Kimi-K2-Instruct-0905): Good for general tasks, coding, and quick responses\n\
             - gpt-oss (GPT-OSS-120B): Good for complex reasoning, analysis, and advanced problem-solving\n\n\
             Available tools (use ONLY these exact names):\n\
-            - read_file: Read file contents (shows full content for files ≤500 lines, preview for larger files)\n\
-            - open_file: Read specific line range from a file (use this for large files or when you need specific sections)\n\
+            - read_file: Read entire file contents (always returns full file)\n\
+            - open_file: Read specific line range from a file (use when you only need a section)\n\
             - write_file: Write/create a file\n\
             - edit_file: Edit existing file by replacing content\n\
             - list_files: List files (single-level patterns only, no **)\n\
@@ -627,24 +627,10 @@ impl KimiChat {
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
 
-        // Smart preview: show full content for small-to-medium files,
-        // preview for very large files
-        const FULL_CONTENT_THRESHOLD: usize = 500;
-        const PREVIEW_LINES: usize = 50;
-
-        if total_lines <= FULL_CONTENT_THRESHOLD {
-            // File is small/medium, show it all
-            Ok(format!("{}\n\n[Total: {} lines]", content, total_lines))
-        } else {
-            // File is very large, show substantial preview
-            let preview: Vec<&str> = lines.iter().take(PREVIEW_LINES).copied().collect();
-            Ok(format!(
-                "{}\n... ({} more lines omitted)\n\n[Total: {} lines. IMPORTANT: This file is too large to show fully. Use open_file with start_line/end_line to read specific ranges. DO NOT attempt to edit this file without reading the full content first using open_file!]",
-                preview.join("\n"),
-                total_lines - PREVIEW_LINES,
-                total_lines
-            ))
-        }
+        // ALWAYS return full content with line count
+        // This ensures consistent, predictable behavior for the model
+        // If a file is too large for context, the API will handle it
+        Ok(format!("{}\n\n[Total: {} lines]", content, total_lines))
     }
 
     fn write_file(&self, file_path: &str, content: &str) -> Result<String> {
