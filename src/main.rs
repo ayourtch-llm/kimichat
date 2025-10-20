@@ -470,10 +470,21 @@ impl KimiChat {
         let current_content = self.read_file(file_path)?;
 
         if !current_content.contains(old_content) {
-            anyhow::bail!(
-                "Old content not found in file. Make sure the old_content exactly matches \
-                the text you want to replace (including whitespace and indentation)."
-            );
+            // Try to find similar content with whitespace normalization
+            let normalized_old = old_content.trim();
+            let normalized_current = current_content.trim();
+            
+            if normalized_current.contains(normalized_old) {
+                eprintln!(
+                    "{} Content found with different whitespace. Replacing...",
+                    "⚠️".yellow()
+                );
+            } else {
+                anyhow::bail!(
+                    "Old content not found in file. Make sure the old_content exactly matches \
+                    the text you want to replace (including whitespace and indentation)."
+                );
+            }
         }
 
         // Count occurrences to warn about multiple replacements
