@@ -26,12 +26,17 @@ impl ConversationLogger {
     pub async fn new(workspace: &Path) -> Result<Self> {
         // Ensure workspace exists
         fs::create_dir_all(workspace).await?;
+        
+        // Create logs subdirectory if it doesn't exist
+        let logs_dir = workspace.join("logs");
+        fs::create_dir_all(&logs_dir).await?;
+        
         let now: DateTime<Utc> = Utc::now();
         let filename = format!(
             "kchat-{}.jsonl",
             now.format("%Y-%m-%d-%H%M%S")
         );
-        let file_path = workspace.join(filename);
+        let file_path = logs_dir.join(filename);
         let file = OpenOptions::new()
             .create(true)
             .append(true)
