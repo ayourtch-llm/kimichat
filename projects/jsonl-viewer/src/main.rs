@@ -17,11 +17,23 @@ use std::{
     fs,
         io::{stdout},
 };
+use std::collections::HashMap;
 
+#[derive(Clone)]
 struct JsonlEntry {
     content: String,
     parsed: Option<Value>,
     valid: bool,
+    timestamp: Option<String>,
+    entry_type: Option<String>,
+}
+
+#[derive(Default)]
+struct EntryStats {
+    total: usize,
+    valid: usize,
+    invalid: usize,
+    by_type: HashMap<String, usize>,
 }
 
 struct App {
@@ -29,6 +41,7 @@ struct App {
     selected_index: usize,
     scroll_offset: usize,
     show_only_invalid: bool,
+    stats: EntryStats,
 }
 
 impl App {
@@ -38,39 +51,62 @@ impl App {
             selected_index: 0,
             scroll_offset: 0,
             show_only_invalid: false,
+            stats: EntryStats::default(),
         }
     }
 
     fn load_jsonl(&mut self, file_path: &str) -> Result<()> {
         let content = fs::read_to_string(file_path)?;
+        let mut stats = EntryStats::default();
+        
         self.entries = content
             .lines()
             .enumerate()
-            .map(|(_, line)| {
+            .map(|(i, line)| {
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
+                    stats.total += 1;
                     JsonlEntry {
                         content: String::new(),
                         parsed: None,
                         valid: true,
+                        timestamp: None,
+                        entry_type: None,
                     }
                 } else {
                     match serde_json::from_str::<Value>(trimmed) {
-                        Ok(value) => JsonlEntry {
-                            content: line.to_string(),
-                            parsed: Some(value),
-                            valid: true,
-                        },
-                        Err(_) => JsonlEntry {
-                            content: line.to_string(),
-                            parsed: None,
-                            valid: false,
-                        },
+                        Ok(value) => {
+                            let (timestamp, entry_type) = extract_entry_metadata(&value);
+                            stats.total += 1;
+                            stats.valid += 1;
+                            if let Some(ref et) = entry_type {
+                                *stats.by_type.entry(et.clone()).or_insert(0) += 1;
+                            }
+                            JsonlEntry {
+                                content: line.to_string(),
+                                parsed: Some(value),
+                                valid: true,
+                                timestamp,
+                                entry_type,
+                            }
+                        }
+                        Err(_) => {
+                            stats.total += 1;
+                            stats.invalid += 1;
+                            JsonlEntry {
+                                content: line.to_string(),
+                                parsed: None,
+                                valid: false,
+                                timestamp: None,
+                                entry_type: None,
+                            }
+                        }
                     }
                 }
             })
             .collect();
         
+        self.stats = stats;
         if !self.entries.is_empty() {
             self.selected_index = 0;
         }
@@ -132,7 +168,23 @@ impl App {
     }
 }
 
-fn draw_entry_list<'a>(entries: &[JsonlEntry], selected: usize, show_only_invalid: bool) -> Vec<Line<'a>> {
+fn extract_entry_metadata(value: &Value) -> (Option<String>, Option<String>) {
+    let timestamp = value.get("timestamp")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    
+    let entry_type = value.get("type")
+        .and_then(|v| v.as_str())
+        .or_else(|| value.get("kind")
+            .and_then(|v| v.as_str()))
+        .or_else(|| value.get("role")
+            .and_then(|v| v.as_str()))
+        .map(|s| s.to_string());
+    
+    (timestamp, entry_type)
+}
+
+fn draw_entry_list(entries: &[JsonlEntry], selected: usize, show_only_invalid: bool) -> Vec<Line> {
     let filtered_entries: Vec<usize> = if show_only_invalid {
         entries
             .iter()
@@ -149,10 +201,21 @@ fn draw_entry_list<'a>(entries: &[JsonlEntry], selected: usize, show_only_invali
         .map(|&i| {
             let entry = &entries[i];
             let prefix = if i == selected { "> " } else { "  " };
-            let content = if entry.content.len() > 50 {
-                format!("{}...", entry.content.chars().take(47).collect::<String>())
+            
+            let mut parts = vec![];
+            
+            if let Some(ref timestamp) = entry.timestamp {
+                parts.push(format!("[{}]", timestamp));
+            }
+            
+            if let Some(ref entry_type) = entry.entry_type {
+                parts.push(format!("({})", entry_type));
+            }
+            
+            let preview = if !parts.is_empty() {
+                format!("{} {}", parts.join(" "), entry.content.chars().take(30).collect::<String>())
             } else {
-                entry.content.clone()
+                entry.content.chars().take(50).collect::<String>()
             };
             
             let style = if entry.valid {
@@ -163,7 +226,7 @@ fn draw_entry_list<'a>(entries: &[JsonlEntry], selected: usize, show_only_invali
             
             Line::from(vec![
                 Span::styled(prefix, style),
-                Span::styled(content, style),
+                Span::styled(preview, style),
             ])
         })
         .collect()
@@ -207,8 +270,14 @@ fn draw_ui(f: &mut Frame, app: &App) {
         .scroll((app.scroll_offset as u16, 0));
     f.render_widget(detail_widget, main_chunks[1]);
 
-    let keys = "Keys: j/k=navigate, d/u=scroll, i=toggle invalid, q=quit";
-    let keys_widget = Paragraph::new(keys)
+    let stats = format!(
+        "Total: {} | Valid: {} | Invalid: {} | Types: {}",
+        app.stats.total,
+        app.stats.valid,
+        app.stats.invalid,
+        app.stats.by_type.len()
+    );
+    let keys_widget = Paragraph::new(stats)
         .block(Block::default().borders(Borders::NONE));
     f.render_widget(keys_widget, chunks[2]);
 }
