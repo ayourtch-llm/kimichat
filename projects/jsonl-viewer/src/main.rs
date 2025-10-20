@@ -357,11 +357,26 @@ fn draw_ui(f: &mut Frame, app: &App) {
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(chunks[1]);
 
+    // Determine visible height of the entry list (excluding borders)
+    let list_height = if main_chunks[0].height > 2 {
+        (main_chunks[0].height - 2) as usize
+    } else {
+        0
+    };
+
+    // Compute scroll offset so selected entry is always visible
+    let entry_scroll = if app.selected_index + 1 > list_height {
+        app.selected_index + 1 - list_height
+    } else {
+        0
+    };
+
     // Create entry list with only visible entries
     let entry_lines = draw_entry_list(&app.entries, app.selected_index, app.show_only_invalid);
     
     let entry_list_widget = Paragraph::new(entry_lines)
-        .block(Block::default().borders(Borders::ALL).title("Entries"));
+        .block(Block::default().borders(Borders::ALL).title("Entries"))
+        .scroll((entry_scroll as u16, 0));
     f.render_widget(entry_list_widget, main_chunks[0]);
 
     let detail_content = if app.selected_index < app.entries.len() {
