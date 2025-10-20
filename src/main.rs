@@ -27,7 +27,12 @@ use crate::preview::two_word_preview;
 mod logging;
 mod open_file;
 mod preview;
+mod core;
+mod tools;
 use logging::ConversationLogger;
+use core::{ToolRegistry, ToolParameters};
+use core::tool_context::ToolContext;
+use tools::*;
 
 
 const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
@@ -395,6 +400,7 @@ struct KimiChat {
     total_tokens_used: usize,
     logger: Option<ConversationLogger>,
     pending_edit_plan: Option<Vec<EditOperation>>,
+    tool_registry: ToolRegistry,
 }
 
 impl KimiChat {
@@ -438,6 +444,8 @@ impl KimiChat {
     }
 
     fn new(api_key: String, work_dir: PathBuf) -> Self {
+        let tool_registry = Self::initialize_tool_registry();
+
         let mut chat = Self {
             api_key,
             work_dir,
@@ -447,6 +455,7 @@ impl KimiChat {
             total_tokens_used: 0,
             logger: None,
             pending_edit_plan: None,
+            tool_registry,
         };
 
         // Add system message to inform the model about capabilities
@@ -463,238 +472,45 @@ impl KimiChat {
         chat
     }
 
-    fn get_tools() -> Vec<Tool> {
-        vec![
+    /// Initialize the tool registry with all available tools
+    fn initialize_tool_registry() -> ToolRegistry {
+        let mut registry = ToolRegistry::new();
+
+        // Register file operation tools
+        registry.register_with_categories(OpenFileTool, vec!["file_ops".to_string()]);
+        registry.register_with_categories(ReadFileTool, vec!["file_ops".to_string()]);
+        registry.register_with_categories(WriteFileTool, vec!["file_ops".to_string()]);
+        registry.register_with_categories(EditFileTool, vec!["file_ops".to_string()]);
+        registry.register_with_categories(ListFilesTool, vec!["file_ops".to_string()]);
+
+        // Register search tools
+        registry.register_with_categories(SearchFilesTool, vec!["search".to_string()]);
+
+        // Register system tools
+        registry.register_with_categories(RunCommandTool, vec!["system".to_string()]);
+
+        // Register model management tools
+        registry.register_with_categories(SwitchModelTool::new(), vec!["model_management".to_string()]);
+        registry.register_with_categories(PlanEditsTool, vec!["model_management".to_string()]);
+        registry.register_with_categories(ApplyEditPlanTool, vec!["model_management".to_string()]);
+
+        registry
+    }
+
+    fn get_tools(&self) -> Vec<Tool> {
+        // Convert new tool registry format to legacy Tool format for backward compatibility
+        let registry_tools = self.tool_registry.get_openai_tool_definitions();
+
+        registry_tools.into_iter().map(|tool_def| {
             Tool {
-                tool_type: "function".to_string(),
+                tool_type: tool_def["type"].as_str().unwrap_or("function").to_string(),
                 function: FunctionDef {
-                    name: "open_file".to_string(),
-                    description: "Open a file and display its contents with optional line range".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "Path to the file relative to the work directory"
-                            },
-                            "start_line": {
-                                "type": "integer",
-                                "description": "Starting line number (1-based)"
-                            },
-                            "end_line": {
-                                "type": "integer",
-                                "description": "Ending line number (1-based)"
-                            }
-                        },
-                        "required": ["file_path"]
-                    }),
+                    name: tool_def["function"]["name"].as_str().unwrap_or("").to_string(),
+                    description: tool_def["function"]["description"].as_str().unwrap_or("").to_string(),
+                    parameters: tool_def["function"]["parameters"].clone(),
                 },
-            },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "read_file".to_string(),
-                    description: "Read a preview of a file (first 10 lines) with total line count. For reading specific line ranges, use open_file instead.".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "Path to the file relative to the work directory"
-                            }
-                        },
-                        "required": ["file_path"]
-                    }),
-                },
-            },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "write_file".to_string(),
-                    description: "Write content to a file in the work directory".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "Path to the file relative to the work directory"
-                            },
-                            "content": {
-                                "type": "string",
-                                "description": "Content to write to the file"
-                            }
-                        },
-                        "required": ["file_path", "content"]
-                    }),
-                },
-            },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "edit_file".to_string(),
-                    description: "Edit a file by replacing old_content with new_content. IMPORTANT: old_content must not be empty - provide the exact text to replace. To add new content, use write_file instead.".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "Path to the file relative to the work directory"
-                            },
-                            "old_content": {
-                                "type": "string",
-                                "description": "The exact content to be replaced (must not be empty)"
-                            },
-                            "new_content": {
-                                "type": "string",
-                                "description": "The new content to replace with"
-                            }
-                        },
-                        "required": ["file_path", "old_content", "new_content"]
-                    }),
-                },
-            },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "list_files".to_string(),
-                    description: "List files in the work directory matching a single-level glob pattern. Recursive patterns (**) are NOT allowed to prevent massive output. Use patterns like 'src/*', '*.rs', or 'src/*.rs'.".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "pattern": {
-                                "type": "string",
-                                "description": "Single-level glob pattern (e.g., 'src/*', '*.rs'). Do NOT use ** for recursion.",
-                                "default": "*"
-                            }
-                        }
-                    }),
-                },
-            },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "search_files".to_string(),
-                    description: "Search for a string or regular-expression across files matching a glob pattern. Returns lines with file:line:content format.".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "pattern": {
-                                "type": "string",
-                                "description": "Single-level glob pattern (e.g., 'src/*.rs'). Defaults to '*' (all files)."
-                            },
-                            "query": {
-                                "type": "string",
-                                "description": "Text or regex to search for (required)"
-                            },
-                            "regex": {
-                                "type": "boolean",
-                                "description": "Treat 'query' as a Rust regex. Default false."
-                            },
-                            "case_insensitive": {
-                                "type": "boolean",
-                                "description": "Plain-text case-insensitive search (ignored when 'regex' is true). Default false."
-                            },
-                            "max_results": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "description": "Maximum number of matches to return. Default 100."
-                            }
-                        },
-                        "required": ["query"]
-                    }),
-                },
-            },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "switch_model".to_string(),
-                    description: "Switch to a different AI model. Use this when the current model thinks another model would be better suited for the task. Available models: 'kimi' (Kimi-K2-Instruct-0905 - good for general tasks and coding) and 'gpt-oss' (GPT-OSS-120B - good for complex reasoning and analysis).".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "model": {
-                                "type": "string",
-                                "enum": ["kimi", "gpt-oss"],
-                                "description": "The model to switch to: 'kimi' or 'gpt-oss'"
-                            },
-                            "reason": {
-                                "type": "string",
-                                "description": "Brief explanation of why switching to this model"
-                            }
-                        },
-                        "required": ["model", "reason"]
-                    }),
-                },
-            },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "run_command".to_string(),
-                    description: "Run a shell command interactively - always asks user confirmation before executing".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "command": {
-                                "type": "string",
-                                "description": "Shell command to run"
-                            }
-                        },
-                        "required": ["command"]
-                    }),
-                },
-            },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "plan_edits".to_string(),
-                    description: "Create a plan of multiple file edits to be applied atomically. Use this when making multiple related changes to files. The plan will validate all edits upfront before applying any. This prevents issues with sequential edits where the model loses track of file state.".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "edits": {
-                                "type": "array",
-                                "description": "Array of edit operations to perform",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "file_path": {
-                                            "type": "string",
-                                            "description": "Path to the file relative to work directory"
-                                        },
-                                        "old_content": {
-                                            "type": "string",
-                                            "description": "Exact content to find and replace (must not be empty)"
-                                        },
-                                        "new_content": {
-                                            "type": "string",
-                                            "description": "Content to replace with"
-                                        },
-                                        "description": {
-                                            "type": "string",
-                                            "description": "Human-readable description of what this edit does"
-                                        }
-                                    },
-                                    "required": ["file_path", "old_content", "new_content", "description"]
-                                }
-                            }
-                        },
-                        "required": ["edits"]
-                    }),
-                },
-            },
-            Tool {
-                tool_type: "function".to_string(),
-                function: FunctionDef {
-                    name: "apply_edit_plan".to_string(),
-                    description: "Apply the previously created edit plan. All edits will be applied sequentially. If any edit fails, the process stops and reports which edit failed.".to_string(),
-                    parameters: serde_json::json!({
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }),
-                },
-            },
-        ]
+            }
+        }).collect()
     }
 
     fn read_file(&self, file_path: &str) -> Result<String> {
@@ -1275,54 +1091,11 @@ impl KimiChat {
     }
 
     async fn execute_tool(&mut self, name: &str, arguments: &str) -> Result<String> {
+        // For backward compatibility, handle special tools that need main application state
         match name {
-            "open_file" => {
-                let args: OpenFileArgs = serde_json::from_str(arguments)?;
-                let line_range = if args.start_line > 0 && args.end_line > 0 {
-                    Some(args.start_line..=args.end_line)
-                } else {
-                    None
-                };
-                
-                // Use the open_file module implementation
-                match open_file::open_file(&self.work_dir, &args.file_path, line_range).await {
-                    Ok(content) => Ok(content),
-                    Err(e) => Err(anyhow::anyhow!("Failed to open file: {}", e))
-                }
-            }
-            "read_file" => {
-                let args: ReadFileArgs = serde_json::from_str(arguments)?;
-                self.read_file(&args.file_path)
-            }
-            "write_file" => {
-                let args: WriteFileArgs = serde_json::from_str(arguments)?;
-                self.write_file(&args.file_path, &args.content)
-            }
-            "edit_file" => {
-                let args: EditFileArgs = serde_json::from_str(arguments)?;
-                self.edit_file(&args.file_path, &args.old_content, &args.new_content)
-            }
-            "list_files" => {
-                let args: ListFilesArgs = serde_json::from_str(arguments)?;
-                self.list_files(&args.pattern)
-            }
-            "search_files" => {
-                let args: SearchFilesArgs = serde_json::from_str(arguments)?;
-                self.search_files(
-                    &args.pattern,
-                    &args.query,
-                    args.regex,
-                    args.case_insensitive,
-                    args.max_results as usize,
-                )
-            }
             "switch_model" => {
                 let args: SwitchModelArgs = serde_json::from_str(arguments)?;
                 self.switch_model(&args.model, &args.reason)
-            }
-            "run_command" => {
-                let args: RunCommandArgs = serde_json::from_str(arguments)?;
-                self.run_command(&args.command)
             }
             "plan_edits" => {
                 let args: PlanEditsArgs = serde_json::from_str(arguments)?;
@@ -1332,7 +1105,24 @@ impl KimiChat {
                 let _args: ApplyEditPlanArgs = serde_json::from_str(arguments)?;
                 self.apply_edit_plan()
             }
-            _ => anyhow::bail!("Unknown tool: {}", name),
+            _ => {
+                // Use the tool registry for all other tools
+                let params = ToolParameters::from_json(arguments)
+                    .with_context(|| format!("Failed to parse tool arguments for '{}': {}", name, arguments))?;
+
+                let context = ToolContext::new(
+                    self.work_dir.clone(),
+                    format!("session_{}", chrono::Utc::now().timestamp())
+                );
+
+                let result = self.tool_registry.execute_tool(name, params, &context).await;
+
+                if result.success {
+                    Ok(result.content)
+                } else {
+                    Err(anyhow::anyhow!("Tool '{}' failed: {}", name, result.error.unwrap_or_else(|| "Unknown error".to_string())))
+                }
+            }
         }
     }
 
@@ -1770,7 +1560,7 @@ impl KimiChat {
 	    let request = ChatRequest {
 		model: current_model.as_str().to_string(),
 		messages: messages.clone(),
-		tools: Self::get_tools(),
+		tools: self.get_tools(),
 		tool_choice: "auto".to_string(),
 	    };
             let response = self

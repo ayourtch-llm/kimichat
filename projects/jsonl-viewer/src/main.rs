@@ -42,6 +42,7 @@ struct App {
     selected_index: usize,
     scroll_offset: usize,
     show_only_invalid: bool,
+    condensed: bool,
     stats: EntryStats,
 }
 
@@ -52,6 +53,7 @@ impl App {
             selected_index: 0,
             scroll_offset: 0,
             show_only_invalid: false,
+            condensed: true,
             stats: EntryStats::default(),
         }
     }
