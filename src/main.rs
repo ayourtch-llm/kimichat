@@ -442,7 +442,7 @@ impl KimiChat {
                 tool_type: "function".to_string(),
                 function: FunctionDef {
                     name: "read_file".to_string(),
-                    description: "Read the contents of a file from the work directory".to_string(),
+                    description: "Read a preview of a file (first 10 lines) with total line count. For reading specific line ranges, use open_file instead.".to_string(),
                     parameters: serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -596,8 +596,28 @@ impl KimiChat {
 
     fn read_file(&self, file_path: &str) -> Result<String> {
         let full_path = self.work_dir.join(file_path);
-        fs::read_to_string(&full_path)
-            .with_context(|| format!("Failed to read file: {}", full_path.display()))
+        let content = fs::read_to_string(&full_path)
+            .with_context(|| format!("Failed to read file: {}", full_path.display()))?;
+
+        let lines: Vec<&str> = content.lines().collect();
+        let total_lines = lines.len();
+
+        // Show only first 10 lines with total count
+        const PREVIEW_LINES: usize = 10;
+
+        if total_lines <= PREVIEW_LINES {
+            // File is short enough, show it all
+            Ok(format!("{}\n\n[Total: {} lines]", content, total_lines))
+        } else {
+            // Show preview with indication there's more
+            let preview: Vec<&str> = lines.iter().take(PREVIEW_LINES).copied().collect();
+            Ok(format!(
+                "{}\n... ({} more lines)\n\n[Total: {} lines. Use open_file with start_line/end_line to read specific ranges]",
+                preview.join("\n"),
+                total_lines - PREVIEW_LINES,
+                total_lines
+            ))
+        }
     }
 
     fn write_file(&self, file_path: &str, content: &str) -> Result<String> {
