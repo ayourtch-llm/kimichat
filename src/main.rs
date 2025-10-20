@@ -62,46 +62,73 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Read file contents
+    /// Read file contents (shows first 10 lines with total count)
     Read {
+        /// Path to the file to read
         file_path: String,
     },
     /// Write content to a file
     Write {
+        /// Path to the file to write
         file_path: String,
+        /// Content to write to the file
         content: String,
     },
     /// Edit a file by replacing old content with new content
     Edit {
+        /// Path to the file to edit
         file_path: String,
+        /// Old content to find and replace (must not be empty)
+        #[arg(short = 'o', long)]
         old_content: String,
+        /// New content to replace with
+        #[arg(short = 'n', long)]
         new_content: String,
     },
-    /// List files in the work directory
+    /// List files matching a glob pattern (no recursive ** allowed)
     List {
-        pattern: Option<String>,
+        /// Glob pattern (e.g., 'src/*.rs'). Defaults to '*'
+        #[arg(default_value = "*")]
+        pattern: String,
     },
-    /// Search for a string or regular-expression across files
+    /// Search for text across files
     Search {
+        /// Text or pattern to search for
         query: String,
-        pattern: Option<String>,
+        /// File pattern to search in (e.g., 'src/*.rs'). Defaults to '*.rs'
+        #[arg(short = 'p', long, default_value = "*.rs")]
+        pattern: String,
+        /// Treat query as regular expression
+        #[arg(short = 'r', long)]
         regex: bool,
+        /// Case-insensitive search
+        #[arg(short = 'i', long)]
         case_insensitive: bool,
-        max_results: Option<u32>,
+        /// Maximum number of results to return
+        #[arg(short = 'm', long, default_value = "100")]
+        max_results: u32,
     },
     /// Switch to a different AI model
     Switch {
+        /// Model to switch to ('kimi' or 'gpt-oss')
         model: String,
+        /// Reason for switching
         reason: String,
     },
-    /// Run a shell command interactively
+    /// Run a shell command
     Run {
+        /// Command to execute
         command: String,
     },
-    /// Open a file and display its contents with optional line range
+    /// Open and display file contents with optional line range
     Open {
+        /// Path to the file to open
         file_path: String,
+        /// Starting line number (1-based)
+        #[arg(short = 's', long)]
         start_line: Option<usize>,
+        /// Ending line number (1-based)
+        #[arg(short = 'e', long)]
         end_line: Option<usize>,
     },
 }
@@ -133,18 +160,15 @@ impl Commands {
             Commands::List { pattern } => {
                 let work_dir = env::current_dir().unwrap();
                 let chat = KimiChat::new("".to_string(), work_dir);
-                let pattern = pattern.clone().unwrap_or_else(|| "*".to_string());
                 Box::pin(async move {
-                    chat.list_files(&pattern)
+                    chat.list_files(pattern)
                 })
             }
             Commands::Search { query, pattern, regex, case_insensitive, max_results } => {
                 let work_dir = env::current_dir().unwrap();
                 let chat = KimiChat::new("".to_string(), work_dir);
-                let pattern = pattern.clone().unwrap_or_else(|| "*".to_string());
-                let max_results = max_results.unwrap_or(100) as usize;
                 Box::pin(async move {
-                    chat.search_files(&pattern, query, *regex, *case_insensitive, max_results)
+                    chat.search_files(pattern, query, *regex, *case_insensitive, *max_results as usize)
                 })
             }
             Commands::Switch { model, reason } => {
