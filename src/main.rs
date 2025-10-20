@@ -146,40 +146,100 @@ enum Commands {
 
 impl Commands {
     fn execute(&self) -> Pin<Box<dyn Future<Output = Result<String>> + '_>> {
+        use crate::core::tool::{Tool, ToolParameters};
+        use crate::core::tool_context::ToolContext;
+        use crate::tools::file_ops::*;
+        use crate::tools::system::*;
+        use crate::tools::search::*;
+
         match self {
             Commands::Read { file_path } => {
                 let work_dir = env::current_dir().unwrap();
-                let chat = KimiChat::new("".to_string(), work_dir);
+                let file_path = file_path.clone();
                 Box::pin(async move {
-                    chat.read_file(file_path)
+                    let mut params = ToolParameters::new();
+                    params.set("file_path", file_path);
+                    let context = ToolContext::new(work_dir, "cli_session".to_string());
+                    let result = ReadFileTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::Write { file_path, content } => {
                 let work_dir = env::current_dir().unwrap();
-                let chat = KimiChat::new("".to_string(), work_dir);
+                let file_path = file_path.clone();
+                let content = content.clone();
                 Box::pin(async move {
-                    chat.write_file(file_path, content)
+                    let mut params = ToolParameters::new();
+                    params.set("file_path", file_path);
+                    params.set("content", content);
+                    let context = ToolContext::new(work_dir, "cli_session".to_string());
+                    let result = WriteFileTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::Edit { file_path, old_content, new_content } => {
                 let work_dir = env::current_dir().unwrap();
-                let chat = KimiChat::new("".to_string(), work_dir);
+                let file_path = file_path.clone();
+                let old_content = old_content.clone();
+                let new_content = new_content.clone();
                 Box::pin(async move {
-                    chat.edit_file(file_path, old_content, new_content)
+                    let mut params = ToolParameters::new();
+                    params.set("file_path", file_path);
+                    params.set("old_content", old_content);
+                    params.set("new_content", new_content);
+                    let context = ToolContext::new(work_dir, "cli_session".to_string());
+                    let result = EditFileTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::List { pattern } => {
                 let work_dir = env::current_dir().unwrap();
-                let chat = KimiChat::new("".to_string(), work_dir);
+                let pattern = pattern.clone();
                 Box::pin(async move {
-                    chat.list_files(pattern)
+                    let mut params = ToolParameters::new();
+                    params.set("pattern", pattern);
+                    let context = ToolContext::new(work_dir, "cli_session".to_string());
+                    let result = ListFilesTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::Search { query, pattern, regex, case_insensitive, max_results } => {
                 let work_dir = env::current_dir().unwrap();
-                let chat = KimiChat::new("".to_string(), work_dir);
+                let query = query.clone();
+                let pattern = pattern.clone();
+                let regex = *regex;
+                let case_insensitive = *case_insensitive;
+                let max_results = *max_results;
                 Box::pin(async move {
-                    chat.search_files(pattern, query, *regex, *case_insensitive, *max_results as usize)
+                    let mut params = ToolParameters::new();
+                    params.set("query", query);
+                    params.set("pattern", pattern);
+                    params.set("regex", regex);
+                    params.set("case_insensitive", case_insensitive);
+                    params.set("max_results", max_results as i64);
+                    let context = ToolContext::new(work_dir, "cli_session".to_string());
+                    let result = SearchFilesTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::Switch { model, reason } => {
@@ -191,20 +251,40 @@ impl Commands {
             }
             Commands::Run { command } => {
                 let work_dir = env::current_dir().unwrap();
-                let chat = KimiChat::new("".to_string(), work_dir);
+                let command = command.clone();
                 Box::pin(async move {
-                    chat.run_command(command)
+                    let mut params = ToolParameters::new();
+                    params.set("command", command);
+                    let context = ToolContext::new(work_dir, "cli_session".to_string());
+                    let result = RunCommandTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::Open { file_path, start_line, end_line } => {
                 let work_dir = env::current_dir().unwrap();
-                let chat = KimiChat::new("".to_string(), work_dir);
+                let file_path = file_path.clone();
+                let start_line = *start_line;
+                let end_line = *end_line;
                 Box::pin(async move {
-                    if let (Some(start), Some(end)) = (start_line, end_line) {
-                        open_file::open_file(Path::new("."), file_path, Some(*start..=*end))
+                    let mut params = ToolParameters::new();
+                    params.set("file_path", file_path);
+                    if let Some(start) = start_line {
+                        params.set("start_line", start as i64);
+                    }
+                    if let Some(end) = end_line {
+                        params.set("end_line", end as i64);
+                    }
+                    let context = ToolContext::new(work_dir, "cli_session".to_string());
+                    let result = OpenFileTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
                     } else {
-                        open_file::open_file(Path::new("."), file_path, None)
-                    }.await
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
         }

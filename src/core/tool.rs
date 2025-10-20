@@ -11,9 +11,21 @@ pub struct ToolParameters {
 }
 
 impl ToolParameters {
+    pub fn new() -> Self {
+        Self {
+            data: HashMap::new(),
+        }
+    }
+
     pub fn from_json(json_str: &str) -> Result<Self> {
         let data: HashMap<String, Value> = serde_json::from_str(json_str)?;
         Ok(Self { data })
+    }
+
+    pub fn set<T: Serialize>(&mut self, key: &str, value: T) {
+        if let Ok(json_value) = serde_json::to_value(value) {
+            self.data.insert(key.to_string(), json_value);
+        }
     }
 
     pub fn get_required<T>(&self, key: &str) -> Result<T>
