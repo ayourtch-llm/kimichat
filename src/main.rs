@@ -521,7 +521,14 @@ impl KimiChat {
     fn new_with_agents(api_key: String, work_dir: PathBuf, use_agents: bool) -> Self {
         let tool_registry = Self::initialize_tool_registry();
         let agent_coordinator = if use_agents {
-            Self::initialize_agent_system(&api_key, &tool_registry).ok()
+            match Self::initialize_agent_system(&api_key, &tool_registry) {
+                Ok(coordinator) => Some(coordinator),
+                Err(e) => {
+                    eprintln!("{} Failed to initialize agent system: {}", "❌".red(), e);
+                    eprintln!("{} Falling back to non-agent mode", "⚠️".yellow());
+                    None
+                }
+            }
         } else {
             None
         };
@@ -588,14 +595,14 @@ impl KimiChat {
         let tool_registry_arc = std::sync::Arc::new((*tool_registry).clone());
         let mut agent_factory = AgentFactory::new(tool_registry_arc);
 
-        // Register LLM clients
+        // Register LLM clients with full model identifiers
         let kimi_client = std::sync::Arc::new(GroqLlmClient::new(
             api_key.to_string(),
-            "kimi".to_string()
+            ModelType::Kimi.as_str().to_string()
         ));
         let gpt_oss_client = std::sync::Arc::new(GroqLlmClient::new(
             api_key.to_string(),
-            "gpt_oss".to_string()
+            ModelType::GptOss.as_str().to_string()
         ));
 
         agent_factory.register_llm_client("kimi".to_string(), kimi_client);
@@ -645,7 +652,7 @@ impl KimiChat {
             let tool_registry_arc = std::sync::Arc::new(self.tool_registry.clone());
             let llm_client = std::sync::Arc::new(GroqLlmClient::new(
                 self.api_key.clone(),
-                "kimi".to_string()
+                self.current_model.as_str().to_string()
             ));
 
             // Convert message history to agent format

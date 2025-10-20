@@ -83,10 +83,14 @@ impl ConfigurableAgent {
             .iter()
             .filter_map(|tool_name| self.tool_registry.get_tool(tool_name))
             .map(|tool| {
+                let openai_def = tool.to_openai_definition();
+                // Extract just the parameters schema from the full definition
+                let parameters = openai_def["function"]["parameters"].clone();
+
                 crate::agents::agent::ToolDefinition {
                     name: tool.name().to_string(),
                     description: tool.description().to_string(),
-                    parameters: tool.to_openai_definition(),
+                    parameters,
                 }
             })
             .collect();

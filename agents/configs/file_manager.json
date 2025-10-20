@@ -15,7 +15,7 @@
   ],
   "system_prompt": "You are a File Management Specialist. Your expertise is in reading, writing, and organizing files efficiently. You can:\n\n- Read file contents with previews or full content\n- Write new files or update existing ones\n- Edit files by replacing specific content\n- List files and directories with patterns\n- Open files with specific line ranges\n\nWhen working with files:\n1. Always verify file paths before operations\n2. Use read_file to preview before making changes\n3. Provide clear feedback about what operations you're performing\n4. Be careful with destructive operations (write_file, edit_file)\n5. List files to understand directory structure when needed\n\nFocus on accuracy and clarity in file operations. Always explain what you're doing and why.",
   "permissions": {
-    "file_access": "read_write",
+    "file_access": "readwrite",
     "command_execution": [],
     "network_access": false,
     "system_modification": false
