@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::path::Path;
 use colored::Colorize;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -8,11 +9,16 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::sleep;
+use std::ops::RangeInclusive;
 use std::io::BufReader;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Write;
-use std::ops::RangeInclusive;
+
+use clap::{Parser, Subcommand};
+use clap_complete::Shell;
+use std::future::Future;
+use std::pin::Pin;
 
 
 mod logging;
@@ -23,6 +29,140 @@ use logging::ConversationLogger;
 const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MAX_CONTEXT_TOKENS: usize = 100_000; // Keep conversation under this to avoid rate limits
 const MAX_RETRIES: u32 = 3;
+
+/// CLI arguments for kimi-chat
+#[derive(Parser)]
+#[command(name = "kimichat")]
+#[command(about = "Kimi Chat - Claude Code-like Experience with Multi-Model AI Support")]
+#[command(version = "0.1.0")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+    
+    /// Run in interactive mode (default)
+    #[arg(short, long)]
+    interactive: bool,
+    
+    /// Generate shell completions
+    #[arg(long, value_enum)]
+    generate: Option<Shell>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Read file contents
+    Read {
+        file_path: String,
+    },
+    /// Write content to a file
+    Write {
+        file_path: String,
+        content: String,
+    },
+    /// Edit a file by replacing old content with new content
+    Edit {
+        file_path: String,
+        old_content: String,
+        new_content: String,
+    },
+    /// List files in the work directory
+    List {
+        pattern: Option<String>,
+    },
+    /// Search for a string or regular-expression across files
+    Search {
+        query: String,
+        pattern: Option<String>,
+        regex: bool,
+        case_insensitive: bool,
+        max_results: Option<u32>,
+    },
+    /// Switch to a different AI model
+    Switch {
+        model: String,
+        reason: String,
+    },
+    /// Run a shell command interactively
+    Run {
+        command: String,
+    },
+    /// Open a file and display its contents with optional line range
+    Open {
+        file_path: String,
+        start_line: Option<usize>,
+        end_line: Option<usize>,
+    },
+}
+
+impl Commands {
+    fn execute(&self) -> Pin<Box<dyn Future<Output = Result<String>> + '_>> {
+        match self {
+            Commands::Read { file_path } => {
+                let work_dir = env::current_dir().unwrap();
+                let chat = KimiChat::new("".to_string(), work_dir);
+                Box::pin(async move {
+                    chat.read_file(file_path)
+                })
+            }
+            Commands::Write { file_path, content } => {
+                let work_dir = env::current_dir().unwrap();
+                let chat = KimiChat::new("".to_string(), work_dir);
+                Box::pin(async move {
+                    chat.write_file(file_path, content)
+                })
+            }
+            Commands::Edit { file_path, old_content, new_content } => {
+                let work_dir = env::current_dir().unwrap();
+                let chat = KimiChat::new("".to_string(), work_dir);
+                Box::pin(async move {
+                    chat.edit_file(file_path, old_content, new_content)
+                })
+            }
+            Commands::List { pattern } => {
+                let work_dir = env::current_dir().unwrap();
+                let chat = KimiChat::new("".to_string(), work_dir);
+                let pattern = pattern.clone().unwrap_or_else(|| "*".to_string());
+                Box::pin(async move {
+                    chat.list_files(&pattern)
+                })
+            }
+            Commands::Search { query, pattern, regex, case_insensitive, max_results } => {
+                let work_dir = env::current_dir().unwrap();
+                let chat = KimiChat::new("".to_string(), work_dir);
+                let pattern = pattern.clone().unwrap_or_else(|| "*".to_string());
+                let max_results = max_results.unwrap_or(100) as usize;
+                Box::pin(async move {
+                    chat.search_files(&pattern, query, *regex, *case_insensitive, max_results)
+                })
+            }
+            Commands::Switch { model, reason } => {
+                let work_dir = env::current_dir().unwrap();
+                let mut chat = KimiChat::new("".to_string(), work_dir);
+                Box::pin(async move {
+                    chat.switch_model(model, reason)
+                })
+            }
+            Commands::Run { command } => {
+                let work_dir = env::current_dir().unwrap();
+                let chat = KimiChat::new("".to_string(), work_dir);
+                Box::pin(async move {
+                    chat.run_command(command)
+                })
+            }
+            Commands::Open { file_path, start_line, end_line } => {
+                let work_dir = env::current_dir().unwrap();
+                let chat = KimiChat::new("".to_string(), work_dir);
+                Box::pin(async move {
+                    if let (Some(start), Some(end)) = (start_line, end_line) {
+                        open_file::open_file(Path::new("."), file_path, Some(*start..=*end))
+                    } else {
+                        open_file::open_file(Path::new("."), file_path, None)
+                    }.await
+                })
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum ModelType {
@@ -169,6 +309,7 @@ struct RunCommandArgs {
 
 #[derive(Debug, Deserialize)]
 struct SearchFilesArgs {
+    #[serde(default)]
     query: String,
     #[serde(default = "default_pattern")]
     pattern: String,
