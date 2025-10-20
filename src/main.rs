@@ -9,19 +9,14 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::sleep;
-use std::ops::RangeInclusive;
-use std::io::BufReader;
-use std::fs::File;
 use std::io::prelude::*;
 use std::io::Write;
 use similar::{ChangeTag, TextDiff};
-use regex::Regex;
 
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 use std::future::Future;
 use std::pin::Pin;
-use crate::preview::two_word_preview;
 
 
 mod logging;
