@@ -78,8 +78,8 @@ impl LlmClient for GroqLlmClient {
         let api_request = serde_json::json!({
             "model": self.model,
             "messages": messages,
-            "temperature": 0.3,
-            "max_tokens": 1000
+            "temperature": 0.1,
+            "max_tokens": 2000
         });
 
         let client = reqwest::Client::new();
@@ -91,8 +91,10 @@ impl LlmClient for GroqLlmClient {
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            return Err(anyhow::anyhow!("API request failed: {}", response.status()));
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("API request failed: {} - {}", status, error_text));
         }
 
         let response_text = response.text().await?;

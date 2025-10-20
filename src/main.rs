@@ -1,3 +1,4 @@
+// Test edit 1 - Added comment
 use anyhow::{Context, Result};
 use std::path::Path;
 use colored::Colorize;
@@ -41,6 +42,7 @@ const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MAX_CONTEXT_TOKENS: usize = 100_000; // Keep conversation under this to avoid rate limits
 const MAX_RETRIES: u32 = 3;
 
+// Test edit 3 - Added comment before Cli struct
 /// CLI arguments for kimi-chat
 #[derive(Parser)]
 #[command(name = "kimichat")]
@@ -1859,19 +1861,15 @@ impl KimiChat {
         const LOOP_DETECTION_WINDOW: usize = 6; // Check last 6 tool calls
         const PROGRESS_EVAL_INTERVAL: u32 = 15; // Evaluate progress every 15 tool calls
 
-        // Initialize progress evaluator if agents are enabled
-        let mut progress_evaluator = if self.use_agents && self.agent_coordinator.is_some() {
-            Some(crate::agents::progress_evaluator::ProgressEvaluator::new(
-                std::sync::Arc::new(crate::agents::groq_client::GroqLlmClient::new(
-                    self.api_key.clone(),
-                    "kimi".to_string()
-                )),
-                0.6, // Minimum confidence threshold
-                PROGRESS_EVAL_INTERVAL,
-            ))
-        } else {
-            None
-        };
+        // Initialize progress evaluator for all operations
+        let mut progress_evaluator = Some(crate::agents::progress_evaluator::ProgressEvaluator::new(
+            std::sync::Arc::new(crate::agents::groq_client::GroqLlmClient::new(
+                self.api_key.clone(),
+                "kimi".to_string()
+            )),
+            0.6, // Minimum confidence threshold
+            PROGRESS_EVAL_INTERVAL,
+        ));
 
         // Track tool calls for progress evaluation
         let mut tool_call_history: Vec<crate::agents::progress_evaluator::ToolCallInfo> = Vec::new();
@@ -1943,8 +1941,15 @@ impl KimiChat {
 
                 // Intelligent progress evaluation (replaces hard limit)
                 if let Some(ref mut evaluator) = progress_evaluator {
+                    // Debug: Show evaluation check
+                    if tool_call_iterations % PROGRESS_EVAL_INTERVAL as usize == 0 && tool_call_iterations > 0 {
+                        eprintln!("[DEBUG] Checking if evaluation should trigger at iteration {} (interval: {})",
+                                 tool_call_iterations, PROGRESS_EVAL_INTERVAL);
+                    }
+
                     if evaluator.should_evaluate(tool_call_iterations as u32) {
                         println!("{}", format!("🧠 Evaluating progress after {} tool calls...", tool_call_iterations).bright_blue());
+                        eprintln!("[DEBUG] Progress evaluation triggered at iteration {}", tool_call_iterations);
 
                         // Create tool call summary
                         let mut tool_usage = std::collections::HashMap::new();
@@ -2180,6 +2185,7 @@ impl KimiChat {
     }
 }
 
+// Test edit 5 - Added comment before main function
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables from .env file if it exists

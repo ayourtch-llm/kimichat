@@ -2,6 +2,11 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 
 /// Tool execution context
+/// 
+/// This struct provides the execution context for tools, including:
+/// - Working directory for file operations
+/// - Session identifier for tracking operations
+/// - Environment variables for configuration
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub work_dir: PathBuf,
