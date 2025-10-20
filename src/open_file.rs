@@ -63,11 +63,18 @@ pub async fn open_file(
     if let Some(range) = line_range {
         let lines: Vec<&str> = content.lines().collect();
         let total = lines.len();
-        let start = *range.start();
-        let end = *range.end();
-        if start < 1 || end > total || start > end {
-            return Err(OpenFileError::InvalidLineRange { start, end, total_lines: total }.into());
+        let requested_start = *range.start();
+        let requested_end = *range.end();
+
+        // Clamp the range to valid values instead of failing
+        let start = requested_start.max(1).min(total.max(1));
+        let end = requested_end.min(total).max(start);
+
+        // If the file is empty, return empty string
+        if total == 0 {
+            return Ok(String::new());
         }
+
         // Convert to 0-based slice indices (inclusive end)
         let slice = &lines[(start - 1)..end];
         Ok(slice.join("\n"))
