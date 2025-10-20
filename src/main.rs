@@ -2128,7 +2128,21 @@ impl KimiChat {
                         }
                     };
 
-                    println!("{} {}", "📋 Result:".green(), result.bright_black());
+                    // Display result to user (truncate for file reading tools)
+                    let display_result = if tool_call.function.name == "open_file" || tool_call.function.name == "read_file" {
+                        let lines: Vec<&str> = result.lines().collect();
+                        if lines.len() > 10 {
+                            let first_10 = lines[..10].join("\n");
+                            let remaining = lines.len() - 10;
+                            format!("{}\n\n...and {} more lines", first_10, remaining)
+                        } else {
+                            result.clone()
+                        }
+                    } else {
+                        result.clone()
+                    };
+
+                    println!("{} {}", "📋 Result:".green(), display_result.bright_black());
 
                     // Log tool result
                     if let Some(logger) = &mut self.logger {
