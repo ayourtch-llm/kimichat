@@ -258,7 +258,16 @@ impl Tool for EditFileTool {
                 }
             }
             _ => {
-                ToolResult::error("Edit cancelled by user".to_string())
+                // Cancelled - ask for optional feedback
+                println!("{}", "Would you like to provide feedback to the model about why you rejected this? (optional)".bright_yellow());
+                println!("{}", "Press Enter to skip, or type your feedback:".bright_black());
+
+                let feedback = match rl.readline("") {
+                    Ok(fb) if !fb.trim().is_empty() => format!(" - {}", fb.trim()),
+                    _ => String::new(),
+                };
+
+                ToolResult::error(format!("Edit cancelled by user{}", feedback))
             }
         }
     }

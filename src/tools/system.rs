@@ -62,7 +62,17 @@ impl Tool for RunCommandTool {
                 println!("{} {}", "Running:".green(), command.cyan());
             }
             _ => {
-                return ToolResult::error("Command cancelled by user".to_string());
+                // Cancelled - ask for optional feedback
+                println!("{}", "Would you like to provide feedback to the model about why you rejected this? (optional)".bright_yellow());
+                println!("{}", "Press Enter to skip, or type your feedback:".bright_black());
+
+                let mut feedback_input = String::new();
+                let feedback = match std::io::stdin().read_line(&mut feedback_input) {
+                    Ok(_) if !feedback_input.trim().is_empty() => format!(" - {}", feedback_input.trim()),
+                    _ => String::new(),
+                };
+
+                return ToolResult::error(format!("Command cancelled by user{}", feedback));
             }
         }
 
