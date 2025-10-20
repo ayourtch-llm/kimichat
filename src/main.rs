@@ -1518,6 +1518,24 @@ impl KimiChat {
 
                 self.messages.push(response.clone());
 
+                // Log assistant message with tool calls
+                if let Some(logger) = &mut self.logger {
+                    let tool_call_info: Vec<(String, String, String)> = tool_calls
+                        .iter()
+                        .map(|tc| (
+                            tc.id.clone(),
+                            tc.function.name.clone(),
+                            tc.function.arguments.clone()
+                        ))
+                        .collect();
+                    logger.log_with_tool_calls(
+                        "assistant",
+                        &response.content,
+                        Some(self.current_model.as_str()),
+                        tool_call_info,
+                    ).await;
+                }
+
                 for tool_call in tool_calls {
                     println!(
                         "{} {} with args: {} (iteration {}/{})",
@@ -1537,6 +1555,15 @@ impl KimiChat {
                     };
 
                     println!("{} {}", "📋 Result:".green(), result.bright_black());
+
+                    // Log tool result
+                    if let Some(logger) = &mut self.logger {
+                        logger.log_tool_result(
+                            &result,
+                            &tool_call.id,
+                            &tool_call.function.name,
+                        ).await;
+                    }
 
                     self.messages.push(Message {
                         role: "tool".to_string(),
