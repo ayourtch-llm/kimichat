@@ -357,8 +357,88 @@ fn draw_ui(f: &mut Frame, app: &App) {
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(chunks[1]);
 
-    let entry_list = draw_entry_list(&app.entries, app.selected_index, app.show_only_invalid);
-    let entry_list_widget = Paragraph::new(entry_list)
+    // Calculate scroll offset to keep selected entry visible
+    let entry_list_height = main_chunks[0].height.saturating_sub(2) as usize; // Convert to usize
+    let filtered_indices: Vec<usize> = if app.show_only_invalid {
+        app.entries.iter().enumerate()
+            .filter(|(_, e)| !e.valid)
+            .map(|(i, _)| i)
+            .collect()
+    } else {
+        (0..app.entries.len()).collect()
+    };
+    
+    // Find position of selected entry in filtered list
+    let selected_pos = filtered_indices.iter().position(|i| *i == app.selected_index).unwrap_or(0);
+    
+    // Determine visible range to keep selected entry in view
+    let visible_start = if selected_pos < entry_list_height {
+        0
+    } else {
+        selected_pos.saturating_sub(entry_list_height - 1)
+    };
+    
+    let visible_end = (visible_start + entry_list_height).min(filtered_indices.len());
+    let visible_indices = &filtered_indices[visible_start..visible_end];
+    
+    // Create entry list with only visible entries
+    let mut entry_lines = vec![];
+    for (i, &idx) in visible_indices.iter().enumerate() {
+        let entry = &app.entries[idx];
+        let prefix = if idx == app.selected_index { "> " } else { "  " };
+        
+        let mut parts = vec![];
+        
+        if let Some(ref recent_msg) = entry.recent_message {
+            parts.push(recent_msg.clone());
+        }
+        
+        if let Some(ref timestamp) = entry.timestamp {
+            let time_part = if timestamp.contains('T') {
+                timestamp.split('T').nth(1).unwrap_or(timestamp)
+            } else if timestamp.contains(' ') {
+                timestamp.split(' ').nth(1).unwrap_or(timestamp)
+            } else {
+                timestamp
+            };
+            
+            let short_timestamp = {
+                let parts: Vec<&str> = time_part.split(':').collect();
+                if parts.len() >= 3 {
+                    let seconds_part = parts[2].split('.').next().unwrap_or(parts[2]);
+                    format!("{}:{}:{}", parts[0], parts[1], seconds_part)
+                } else if parts.len() >= 2 {
+                    format!("{}:{}", parts[0], parts[1])
+                } else {
+                    time_part.to_string()
+                }
+            };
+            parts.push(format!("[{}]", short_timestamp));
+        }
+        
+        if let Some(ref entry_type) = entry.entry_type {
+            parts.push(format!("({})", entry_type));
+        }
+        
+        let preview = if !parts.is_empty() {
+            parts.join(" ")
+        } else {
+            entry.content.chars().take(50).collect::<String>()
+        };
+        
+        let style = if entry.valid {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::Red)
+        };
+        
+        entry_lines.push(Line::from(vec![
+            Span::styled(prefix, style),
+            Span::styled(preview, style),
+        ]));
+    }
+    
+    let entry_list_widget = Paragraph::new(entry_lines)
         .block(Block::default().borders(Borders::ALL).title("Entries"));
     f.render_widget(entry_list_widget, main_chunks[0]);
 
