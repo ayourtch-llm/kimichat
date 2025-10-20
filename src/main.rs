@@ -14,6 +14,7 @@ use std::io::BufReader;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Write;
+use similar::{ChangeTag, TextDiff};
 
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
@@ -599,6 +600,28 @@ impl KimiChat {
         Ok(format!("Successfully wrote to {}", file_path))
     }
 
+    fn show_diff(&self, old: &str, new: &str, context_lines: usize) -> String {
+        let diff = TextDiff::from_lines(old, new);
+        let mut output = String::new();
+
+        for (idx, group) in diff.grouped_ops(context_lines).iter().enumerate() {
+            if idx > 0 {
+                output.push_str(&format!("{}\n", "---".bright_black()));
+            }
+            for op in group {
+                for change in diff.iter_inline_changes(op) {
+                    let (sign, color_fn): (&str, fn(&str) -> colored::ColoredString) = match change.tag() {
+                        ChangeTag::Delete => ("-", |s| s.red()),
+                        ChangeTag::Insert => ("+", |s| s.green()),
+                        ChangeTag::Equal => (" ", |s| s.normal()),
+                    };
+                    output.push_str(&format!("{}{}", sign, color_fn(&change.to_string())));
+                }
+            }
+        }
+        output
+    }
+
     fn edit_file(&self, file_path: &str, old_content: &str, new_content: &str) -> Result<String> {
         // Prevent empty old_content which would cause catastrophic replacement
         if old_content.is_empty() {
@@ -610,37 +633,106 @@ impl KimiChat {
 
         let current_content = self.read_file(file_path)?;
 
+        // Check if old_content exists in the file
         if !current_content.contains(old_content) {
-            // Try to find similar content with whitespace normalization
-            let normalized_old = old_content.trim();
-            let normalized_current = current_content.trim();
-            
-            if normalized_current.contains(normalized_old) {
-                eprintln!(
-                    "{} Content found with different whitespace. Replacing...",
-                    "⚠️".yellow()
-                );
-            } else {
-                anyhow::bail!(
-                    "Old content not found in file. Make sure the old_content exactly matches \
-                    the text you want to replace (including whitespace and indentation)."
-                );
-            }
-        }
+            // Content not found - show what we were looking for and ask for manual intervention
+            println!("{}", "❌ Content not found in file!".red().bold());
+            println!("\n{}", "Looking for:".yellow());
+            println!("{}", "─".repeat(50).bright_black());
+            println!("{}", old_content.bright_white());
+            println!("{}", "─".repeat(50).bright_black());
 
-        // Count occurrences to warn about multiple replacements
-        let occurrences = current_content.matches(old_content).count();
-        if occurrences > 1 {
-            eprintln!(
-                "{} Warning: Found {} occurrences of old_content. All will be replaced.",
-                "⚠️".yellow(),
-                occurrences
+            println!("\n{}", "Proposed replacement:".yellow());
+            println!("{}", "─".repeat(50).bright_black());
+            println!("{}", new_content.bright_white());
+            println!("{}", "─".repeat(50).bright_black());
+
+            // Try fuzzy matching to suggest alternatives
+            let lines: Vec<&str> = current_content.lines().collect();
+            let search_lines: Vec<&str> = old_content.lines().collect();
+
+            if !search_lines.is_empty() {
+                let first_search_line = search_lines[0].trim();
+                println!("\n{}", "Searching for similar content...".bright_cyan());
+
+                for (i, line) in lines.iter().enumerate() {
+                    if line.trim().contains(first_search_line) {
+                        let start = i.saturating_sub(2);
+                        let end = (i + 5).min(lines.len());
+                        println!("\n{} Found similar at line {}:", "💡".bright_cyan(), i + 1);
+                        for (j, ctx_line) in lines[start..end].iter().enumerate() {
+                            let line_num = start + j + 1;
+                            if line_num == i + 1 {
+                                println!("{}", format!("{:4} > {}", line_num, ctx_line).bright_yellow());
+                            } else {
+                                println!("{}", format!("{:4}   {}", line_num, ctx_line).bright_black());
+                            }
+                        }
+                    }
+                }
+            }
+
+            anyhow::bail!(
+                "Old content not found in file '{}'. The model should read the file first to get the exact content to replace.",
+                file_path
             );
         }
 
+        // Count occurrences
+        let occurrences = current_content.matches(old_content).count();
+
+        // Generate the updated content
         let updated_content = current_content.replace(old_content, new_content);
-        self.write_file(file_path, &updated_content)?;
-        Ok(format!("Successfully edited {} ({} replacement(s))", file_path, occurrences))
+
+        // Show diff
+        println!("\n{}", format!("📝 Proposed changes to {}:", file_path).bright_cyan().bold());
+        println!("{}", "═".repeat(60).bright_black());
+        let diff_output = self.show_diff(&current_content, &updated_content, 3);
+        print!("{}", diff_output);
+        println!("{}", "═".repeat(60).bright_black());
+
+        if occurrences > 1 {
+            println!("{}", format!("⚠️  Warning: {} occurrences will be replaced", occurrences).yellow());
+        }
+
+        // Ask for confirmation
+        println!("\n{}", "Apply these changes? [Y/n/e(dit)]".bright_green().bold());
+
+        let mut rl = DefaultEditor::new()?;
+        let response = rl.readline(">>> ")?;
+        let response = response.trim().to_lowercase();
+
+        match response.as_str() {
+            "" | "y" | "yes" => {
+                self.write_file(file_path, &updated_content)?;
+                Ok(format!("✅ Successfully edited {} ({} replacement(s))", file_path, occurrences))
+            }
+            "e" | "edit" => {
+                // Allow manual editing
+                println!("{}", "Enter the corrected old_content (end with Ctrl+D or empty line):".yellow());
+                let mut manual_old = String::new();
+                loop {
+                    match rl.readline("") {
+                        Ok(line) if line.is_empty() => break,
+                        Ok(line) => {
+                            manual_old.push_str(&line);
+                            manual_old.push('\n');
+                        }
+                        Err(_) => break,
+                    }
+                }
+
+                if !manual_old.is_empty() {
+                    // Retry with manual input
+                    return self.edit_file(file_path, &manual_old.trim_end(), new_content);
+                } else {
+                    anyhow::bail!("Edit cancelled - no content provided")
+                }
+            }
+            _ => {
+                anyhow::bail!("Edit cancelled by user")
+            }
+        }
     }
 
     fn list_files(&self, pattern: &str) -> Result<String> {
