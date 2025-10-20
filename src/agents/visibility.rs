@@ -1,6 +1,7 @@
 use colored::Colorize;
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
 
 /// Enhanced visibility system for agent operations
 #[derive(Debug, Clone)]
@@ -19,7 +20,7 @@ pub struct VisibilityManager {
     verbosity_level: VerbosityLevel,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentVisibilityInfo {
     pub name: String,
     pub capabilities: Vec<String>,
@@ -31,7 +32,7 @@ pub struct AgentVisibilityInfo {
     pub progress_percentage: f32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AgentStatus {
     Idle,
     Analyzing,
@@ -41,7 +42,7 @@ pub enum AgentStatus {
     Failed(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskVisibilityEvent {
     pub task_id: String,
     pub agent_name: String,
@@ -53,7 +54,7 @@ pub struct TaskVisibilityEvent {
     pub execution_metrics: ExecutionMetrics,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TaskStatus {
     Started,
     InProgress(f32), // Progress percentage
@@ -62,7 +63,7 @@ pub enum TaskStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionMetrics {
     pub execution_time: Duration,
     pub tokens_used: Option<usize>,
@@ -71,7 +72,7 @@ pub struct ExecutionMetrics {
     pub memory_usage: Option<usize>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceMetrics {
     pub total_tasks: usize,
     pub successful_tasks: usize,
@@ -81,7 +82,7 @@ pub struct PerformanceMetrics {
     pub agent_performance: HashMap<String, AgentPerformance>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentPerformance {
     pub tasks_completed: usize,
     pub success_rate: f32,
@@ -89,7 +90,7 @@ pub struct AgentPerformance {
     pub last_used: Option<Instant>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ExecutionPhase {
     Planning,
     AgentSelection,
@@ -161,76 +162,6 @@ impl VisibilityManager {
         println!();
     }
     
-    /// Register a task with the visibility manager
-    pub fn register_task(&mut self, 
-        _task_id: String, 
-        task_description: String,
-    ) {
-        // This is a simplified version - in a full implementation,
-        // we would track task state and integrate with the task queue
-        if self.verbosity_level == VerbosityLevel::Debug {
-            println!("{} {}", "📋 Registered task:".bright_blue(), task_description.white());
-        }
-    }
-    
-    /// Update task progress
-    pub fn update_task_progress(&mut self,
-        task_id: &str,
-        progress_percentage: f32,
-        status: &str,
-    ) {
-        if self.verbosity_level == VerbosityLevel::Detailed || self.verbosity_level == VerbosityLevel::Debug {
-            let progress_bar = self.create_progress_bar(progress_percentage);
-            println!("{} {} [{}] {}", 
-                "🔄".bright_yellow(),
-                task_id.bright_white(),
-                progress_bar,
-                status.bright_cyan()
-            );
-        }
-    }
-    
-    /// Create a simple progress bar
-    fn create_progress_bar(&self, percentage: f32) -> String {
-        let filled_blocks = ((percentage / 100.0) * 20.0) as usize;
-        let empty_blocks = 20 - filled_blocks;
-        
-        format!("[{}{}] {:.0}%", 
-            "█".repeat(filled_blocks).bright_green(),
-            "░".repeat(empty_blocks).bright_black(),
-            percentage
-        )
-    }
-    
-    /// Get task queue status
-    pub fn get_task_queue_status(&self) -> (usize, usize, usize) {
-        // In a full implementation, this would return actual counts
-        // For now, return dummy data
-        (2, 1, 3) // pending, active, completed
-    }
-    
-    /// Get current active agent
-    pub fn get_current_agent(&self) -> Option<String> {
-        self.active_agents
-            .values()
-            .find(|agent| matches!(agent.status, AgentStatus::Executing))
-            .map(|agent| agent.name.clone())
-    }
-    
-    /// Get performance summary
-    pub fn get_performance_summary(&self) -> (f32, usize, usize) {
-        // Return average task time, total tokens, success rate
-        let avg_time = self.performance_metrics.average_execution_time.as_secs_f32();
-        let tokens = self.performance_metrics.total_tokens_used;
-        let success_rate = if self.performance_metrics.total_tasks > 0 {
-            self.performance_metrics.successful_tasks as f32 / self.performance_metrics.total_tasks as f32
-        } else {
-            0.0
-        };
-        
-        (avg_time, tokens, (success_rate * 100.0) as usize)
-    }
-    
     /// Register an agent for visibility tracking
     pub fn register_agent(&mut self, name: String, capabilities: Vec<String>) {
         let info = AgentVisibilityInfo {
@@ -249,26 +180,12 @@ impl VisibilityManager {
     
     /// Update agent status
     pub fn update_agent_status(&mut self, name: &str, status: AgentStatus, task_description: Option<String>) {
-        // Get agent info first to avoid borrow conflicts
-        let should_display = self.verbosity_level == VerbosityLevel::Detailed || self.verbosity_level == VerbosityLevel::Debug;
-        
         if let Some(agent) = self.active_agents.get_mut(name) {
             agent.status = status;
             agent.current_task = task_description;
             
-            if should_display {
-                // Create a copy to avoid borrowing issues
-                let agent_copy = AgentVisibilityInfo {
-                    name: agent.name.clone(),
-                    capabilities: agent.capabilities.clone(),
-                    start_time: agent.start_time,
-                    current_task: agent.current_task.clone(),
-                    status: agent.status.clone(),
-                    confidence_score: agent.confidence_score,
-                    estimated_completion: agent.estimated_completion,
-                    progress_percentage: agent.progress_percentage,
-                };
-                self.display_agent_update(&agent_copy);
+            if self.verbosity_level == VerbosityLevel::Detailed || self.verbosity_level == VerbosityLevel::Debug {
+                self.display_agent_update(agent);
             }
         }
     }
@@ -290,12 +207,158 @@ impl VisibilityManager {
             _ => format!("{}", status_icon).yellow(),
         };
         
-        print!("{} {} {}", status_color, agent.name.bright_white(), format!("({:.0}%)", agent.progress_percentage).bright_blue());
+        print!("{} {} {}", status_color, agent.name.bright_white(), format!("({}%)", agent.progress_percentage).bright_blue());
         
         if let Some(task) = &agent.current_task {
             print!(" - {}", task.cyan());
         }
         println!();
+    }
+    
+    /// Record task start
+    pub fn record_task_start(&mut self, task_id: String, agent_name: String, task_description: String) {
+        let event = TaskVisibilityEvent {
+            task_id: task_id.clone(),
+            agent_name: agent_name.clone(),
+            task_description: task_description.clone(),
+            start_time: Instant::now(),
+            end_time: None,
+            status: TaskStatus::Started,
+            result_summary: None,
+            execution_metrics: ExecutionMetrics {
+                execution_time: Duration::from_secs(0),
+                tokens_used: None,
+                tool_calls: 0,
+                api_calls: 0,
+                memory_usage: None,
+            },
+        };
+        
+        self.task_history.push(event);
+        
+        // Update agent status
+        self.update_agent_status(
+            &agent_name,
+            AgentStatus::Executing,
+            Some(task_description)
+        );
+        
+        if self.verbosity_level != VerbosityLevel::Minimal {
+            println!("{} {} started task: {}", 
+                "▶️".green(),
+                agent_name.bright_white(),
+                task_description.cyan()
+            );
+        }
+    }
+    
+    /// Update task progress
+    pub fn update_task_progress(&mut self, task_id: &str, progress: f32, message: Option<String>) {
+        if let Some(task) = self.task_history.iter_mut().find(|t| t.task_id == task_id) {
+            task.status = TaskStatus::InProgress(progress);
+            
+            if self.verbosity_level == VerbosityLevel::Detailed || self.verbosity_level == VerbosityLevel::Debug {
+                if let Some(msg) = message {
+                    println!("{} {} {}", 
+                        format!("[{}%]", (progress * 100.0) as u32).bright_blue(),
+                        task.agent_name.bright_white(),
+                        msg.cyan()
+                    );
+                }
+            }
+        }
+    }
+    
+    /// Record task completion
+    pub fn record_task_completion(&mut self, task_id: &str, result_summary: Option<String>, success: bool) {
+        if let Some(task) = self.task_history.iter_mut().find(|t| t.task_id == task_id) {
+            task.end_time = Some(Instant::now());
+            task.status = if success {
+                TaskStatus::Completed
+            } else {
+                TaskStatus::Failed("Task execution failed".to_string())
+            };
+            task.result_summary = result_summary;
+            
+            // Update performance metrics
+            self.update_performance_metrics(task, success);
+            
+            // Update agent status
+            self.update_agent_status(
+                &task.agent_name.clone(),
+                if success { AgentStatus::Completed } else { AgentStatus::Failed("Task failed".to_string()) },
+                None
+            );
+        }
+    }
+    
+    /// Update performance metrics
+    fn update_performance_metrics(&mut self, task: &TaskVisibilityEvent, success: bool) {
+        self.performance_metrics.total_tasks += 1;
+        if success {
+            self.performance_metrics.successful_tasks += 1;
+        } else {
+            self.performance_metrics.failed_tasks += 1;
+        }
+        
+        // Update agent-specific performance
+        let agent_name = task.agent_name.clone();
+        let performance = self.performance_metrics.agent_performance
+            .entry(agent_name.clone())
+            .or_insert_with(|| AgentPerformance {
+                tasks_completed: 0,
+                success_rate: 0.0,
+                average_time: Duration::from_secs(0),
+                last_used: None,
+            });
+        
+        performance.tasks_completed += 1;
+        performance.success_rate = self.performance_metrics.successful_tasks as f32 / self.performance_metrics.total_tasks as f32;
+        performance.last_used = Some(Instant::now());
+    }
+    
+    /// Display current status summary
+    pub fn display_status_summary(&self) {
+        println!("{}", "═".repeat(60).bright_blue());
+        println!("{}", "📊 SYSTEM STATUS SUMMARY".bright_blue().bold());
+        println!("{}", "═".repeat(60).bright_blue());
+        
+        println!("{} {:?}", "Current Phase:".bright_cyan(), self.current_phase);
+        println!("{} {}", "Active Agents:".bright_cyan(), self.active_agents.len().to_string().bright_yellow());
+        println!("{} {}", "Total Tasks:".bright_cyan(), self.performance_metrics.total_tasks.to_string().bright_yellow());
+        println!("{} {:.1}%", "Success Rate:".bright_cyan(), 
+            (self.performance_metrics.successful_tasks as f32 / self.performance_metrics.total_tasks.max(1) as f32 * 100.0)
+        );
+        
+        if self.verbosity_level == VerbosityLevel::Detailed || self.verbosity_level == VerbosityLevel::Debug {
+            println!();
+            println!("{}", "Active Agents:".bright_cyan().bold());
+            for (_, agent) in &self.active_agents {
+                self.display_agent_update(agent);
+            }
+        }
+        
+        println!("{}", "═".repeat(60).bright_blue());
+        println!();
+    }
+    
+    /// Get performance summary
+    pub fn get_performance_summary(&self) -> String {
+        format!(
+            "Total: {}, Success: {} ({}%), Failed: {}",
+            self.performance_metrics.total_tasks,
+            self.performance_metrics.successful_tasks,
+            (self.performance_metrics.successful_tasks as f32 / self.performance_metrics.total_tasks.max(1) as f32 * 100.0) as u32,
+            self.performance_metrics.failed_tasks
+        )
+    }
+    
+    /// Clear old history (keep last N tasks)
+    pub fn cleanup_history(&mut self, keep_last: usize) {
+        if self.task_history.len() > keep_last {
+            let start_index = self.task_history.len() - keep_last;
+            self.task_history = self.task_history.split_off(start_index);
+        }
     }
 }
 
