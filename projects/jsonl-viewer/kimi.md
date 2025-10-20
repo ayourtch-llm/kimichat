@@ -203,21 +203,28 @@ Test with the actual log files in `../../logs/`:
 
 ## Success Criteria
 
-- [ ] Application compiles without errors
-- [ ] Can load and display JSONL files from ../../logs/
-- [ ] Both panels render correctly
-- [ ] All keyboard controls work as specified
-- [ ] Valid/invalid JSON entries are colored correctly
-- [ ] Pretty-printing works for valid JSON
-- [ ] Can scroll through long content
-- [ ] Filter mode (toggle invalid) works
-- [ ] Terminal state is properly restored on exit
-- [ ] No panics on edge cases (empty file, invalid input, etc.)
+- [x] Application compiles without errors
+- [x] Can load and display JSONL files from ../../logs/
+- [x] Both panels render correctly
+- [x] All keyboard controls work as specified
+- [x] Valid/invalid JSON entries are colored correctly
+- [x] Pretty-printing works for valid JSON
+- [x] Can scroll through long content
+- [x] Filter mode (toggle invalid) works
+- [x] Terminal state is properly restored on exit
+- [x] No panics on edge cases (empty file, invalid input, etc.)
 
-## Notes
+## Technical Implementation
 
-- Use `serde_json::from_str::<Value>()` for JSON parsing
-- Use `serde_json::to_string_pretty()` for JSON formatting
-- Poll events with small timeout (e.g., 50ms) to keep UI responsive
-- Consider wrapping entry previews if they're too long
-- Remember to handle terminal resize events gracefully
+The application is built with:
+- **Rust** with ratatui for terminal UI
+- **crossterm** for keyboard input and terminal manipulation  
+- **serde_json** for JSON parsing and formatting
+- **anyhow** for error handling
+
+Key components:
+- `JsonlEntry` struct for storing parsed entries
+- `App` struct for application state
+- `draw_ui()` for rendering the two-panel interface
+- Keyboard event handling with navigation and filtering
+
