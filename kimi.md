@@ -1,5 +1,12 @@
 # Kimi Chat - Rust CLI Application
 
+## Important Notes - MUST FOLLOW!
+
+**Conversation History**: Check existing conversation history before deciding whether to perform operations - avoid redundant calls
+**File Operations**: Use specific patterns like `"src/*.rs"` instead of `"*.rs"` to locate files in the src directory
+**Repeat operations**: If your history already has a file read, do not read it again - as this will overload the history. Likewise, if you are doing an edit - do not attempt to do it multiple times, if something fails, ask the user to verify.
+
+
 ## Project Overview
 
 kimi-chat is a Rust-based CLI application that provides a Claude Code-like experience with multi-model AI support, file operations, and intelligent model switching capabilities.
@@ -95,12 +102,6 @@ cargo run
 # Release build
 ./target/release/kimichat
 ```
-
-## Important Notes - MUST FOLLOW!
-
-**Conversation History**: Check existing conversation history before deciding whether to perform operations - avoid redundant calls
-**File Operations**: Use specific patterns like `"src/*.rs"` instead of `"*.rs"` to locate files in the src directory
-**Repeat operations**: If your history already has a file read, do not read it again - as this will overload the history. Likewise, if you are doing an edit - do not attempt to do it multiple times, if something fails, ask the user to verify.
 
 ## Key Functions
 
