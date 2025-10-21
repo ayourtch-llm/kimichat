@@ -75,15 +75,15 @@ impl PlanningCoordinator {
             vm.set_phase(ExecutionPhase::Planning);
         }
 
-        // 1. Analyze request and create initial task
-        let initial_task = self.analyze_request(request).await?;
+        // 1. Use planner agent to decompose the request
+        println!("{} Invoking planner agent to analyze request...", "🧠".cyan());
+        let tasks = self.plan_with_agent(request, context).await?;
 
-        // 2. Decompose task if needed
+        // 2. Set agent selection phase
         {
             let mut vm = self.visibility_manager.write().await;
             vm.set_phase(ExecutionPhase::AgentSelection);
         }
-        let tasks = self.decompose_task(initial_task).await?;
 
         // 3. Add tasks to queue
         {
@@ -153,6 +153,115 @@ impl PlanningCoordinator {
         }
 
         Ok(final_result)
+    }
+
+    /// Use the planner agent to decompose request into tasks
+    async fn plan_with_agent(&self, request: &str, context: &ExecutionContext) -> Result<Vec<Task>> {
+        // Get planner agent config
+        let planner_config = self.agent_configs.get("planner")
+            .ok_or_else(|| anyhow::anyhow!("Planner agent not configured"))?;
+
+        // Create planner agent
+        let planner = self.agent_factory.create_agent(planner_config)?;
+
+        // Create planning task
+        let plan_task = Task {
+            id: format!("plan_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
+            description: format!("Analyze and decompose this request: {}", request),
+            task_type: TaskType::Simple,
+            priority: TaskPriority::Critical,
+            metadata: HashMap::new(),
+        };
+
+        // Execute planner
+        let plan_result = planner.execute(plan_task, context).await;
+
+        if !plan_result.success {
+            // Fallback to simple task if planner fails
+            println!("{} Planner failed, creating single task", "⚠️".yellow());
+            return Ok(vec![Task {
+                id: format!("task_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
+                description: request.to_string(),
+                task_type: TaskType::Simple,
+                priority: TaskPriority::Medium,
+                metadata: HashMap::new(),
+            }]);
+        }
+
+        // Parse planner output (JSON)
+        match self.parse_plan_json(&plan_result.content, request) {
+            Ok(tasks) => {
+                println!("{} Planner created {} task(s)", "✅".green(), tasks.len());
+                Ok(tasks)
+            }
+            Err(e) => {
+                println!("{} Failed to parse plan: {}, creating single task", "⚠️".yellow(), e);
+                // Fallback to single task
+                Ok(vec![Task {
+                    id: format!("task_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
+                    description: request.to_string(),
+                    task_type: TaskType::Simple,
+                    priority: TaskPriority::Medium,
+                    metadata: HashMap::new(),
+                }])
+            }
+        }
+    }
+
+    /// Parse planner's JSON output into tasks
+    fn parse_plan_json(&self, json_str: &str, original_request: &str) -> Result<Vec<Task>> {
+        use serde_json::Value;
+
+        // Extract JSON from response (might have markdown code blocks)
+        let json_str = if let Some(start) = json_str.find('{') {
+            if let Some(end) = json_str.rfind('}') {
+                &json_str[start..=end]
+            } else {
+                json_str
+            }
+        } else {
+            json_str
+        };
+
+        let plan: Value = serde_json::from_str(json_str)?;
+
+        let strategy = plan["strategy"].as_str().unwrap_or("single_task");
+        let subtasks = plan["subtasks"].as_array()
+            .ok_or_else(|| anyhow::anyhow!("No subtasks array in plan"))?;
+
+        if strategy == "single_task" || subtasks.is_empty() {
+            // Single task
+            return Ok(vec![Task {
+                id: format!("task_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
+                description: original_request.to_string(),
+                task_type: TaskType::Simple,
+                priority: TaskPriority::Medium,
+                metadata: HashMap::new(),
+            }]);
+        }
+
+        // Multiple subtasks
+        let mut tasks = Vec::new();
+        for (idx, subtask) in subtasks.iter().enumerate() {
+            let description = subtask["description"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("Subtask missing description"))?;
+            let agent_name = subtask["agent"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("Subtask missing agent assignment"))?;
+
+            let mut metadata = HashMap::new();
+            metadata.insert("assigned_agent".to_string(), agent_name.to_string());
+            metadata.insert("depth".to_string(), "0".to_string());
+
+            tasks.push(Task {
+                id: format!("task_{}_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0), idx),
+                description: description.to_string(),
+                task_type: TaskType::Simple,
+                priority: TaskPriority::Medium,
+                metadata,
+            });
+        }
+
+        Ok(tasks)
     }
 
     /// Analyze user request and create initial task
@@ -324,7 +433,24 @@ impl PlanningCoordinator {
 
     /// Find the best agent for a given task
     async fn find_suitable_agent(&self, task: &Task) -> Result<Arc<dyn Agent>> {
+        // First check if task has a pre-assigned agent from the planner
+        if let Some(assigned_agent) = task.metadata.get("assigned_agent") {
+            if let Some(config) = self.agent_configs.get(assigned_agent) {
+                let agent = self.agent_factory.create_agent(config)?;
+                println!("{} Using planner-assigned agent '{}' for task", "🎯".purple(), assigned_agent);
+                return Ok(Arc::from(agent));
+            } else {
+                println!("{} Planner assigned '{}' but agent not found, searching...", "⚠️".yellow(), assigned_agent);
+            }
+        }
+
+        // Fallback: search for suitable agent
         for (agent_name, config) in &self.agent_configs {
+            // Skip the planner agent for execution tasks
+            if agent_name == "planner" {
+                continue;
+            }
+
             let agent = self.agent_factory.create_agent(config)?;
 
             if agent.can_handle(task) {
@@ -333,11 +459,13 @@ impl PlanningCoordinator {
             }
         }
 
-        // Fallback to a general-purpose agent
-        if let Some(config) = self.agent_configs.values().next() {
-            let agent = self.agent_factory.create_agent(config)?;
-            println!("{} Using fallback agent for task", "🔄".yellow());
-            return Ok(Arc::from(agent));
+        // Final fallback to a general-purpose agent (not planner)
+        for (agent_name, config) in &self.agent_configs {
+            if agent_name != "planner" {
+                let agent = self.agent_factory.create_agent(config)?;
+                println!("{} Using fallback agent '{}' for task", "🔄".yellow(), agent_name);
+                return Ok(Arc::from(agent));
+            }
         }
 
         Err(anyhow::anyhow!("No suitable agent found for task"))
