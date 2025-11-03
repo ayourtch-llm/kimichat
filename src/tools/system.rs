@@ -77,6 +77,7 @@ impl Tool for RunCommandTool {
         }
 
         // Parse command and arguments
+        let orig_command = command.clone();
         let parts: Vec<&str> = command.trim().split_whitespace().collect();
         if parts.is_empty() {
             return ToolResult::error("Empty command".to_string());
@@ -85,8 +86,8 @@ impl Tool for RunCommandTool {
         let (cmd, args) = parts.split_first().unwrap();
 
         // Execute command in work directory
-        let output = match AsyncCommand::new(cmd)
-            .args(args)
+        let output = match AsyncCommand::new("bash")
+            .args(["-c", &orig_command])
             .current_dir(&context.work_dir)
             .output()
             .await
