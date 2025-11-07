@@ -65,10 +65,22 @@ struct Cli {
     /// Run in summary mode – give a short description of the task.
     #[arg(long, value_name = "TEXT")]
     task: Option<String>,
-    
+
     /// Pretty‑print the JSON output (only useful with --task)
     #[arg(long)]
     pretty: bool,
+
+    /// Use llama.cpp server instead of Groq (e.g., http://localhost:8080)
+    #[arg(long, value_name = "URL")]
+    llama_cpp_url: Option<String>,
+
+    /// Override the 'kimi' model with a custom model name
+    #[arg(long, value_name = "MODEL")]
+    model_kimi: Option<String>,
+
+    /// Override the 'gpt-oss' model with a custom model name
+    #[arg(long, value_name = "MODEL")]
+    model_gpt_oss: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -291,24 +303,35 @@ impl Commands {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum ModelType {
     Kimi,
     GptOss,
+    Custom(String),
 }
 
 impl ModelType {
-    fn as_str(&self) -> &'static str {
+    fn as_str(&self) -> String {
         match self {
-            ModelType::Kimi => "moonshotai/kimi-k2-instruct-0905",
-            ModelType::GptOss => "openai/gpt-oss-120b",
+            ModelType::Kimi => "moonshotai/kimi-k2-instruct-0905".to_string(),
+            ModelType::GptOss => "openai/gpt-oss-120b".to_string(),
+            ModelType::Custom(name) => name.clone(),
         }
     }
 
-    fn display_name(&self) -> &'static str {
+    fn display_name(&self) -> String {
         match self {
-            ModelType::Kimi => "Kimi-K2-Instruct-0905",
-            ModelType::GptOss => "GPT-OSS-120B",
+            ModelType::Kimi => "Kimi-K2-Instruct-0905".to_string(),
+            ModelType::GptOss => "GPT-OSS-120B".to_string(),
+            ModelType::Custom(name) => name.clone(),
+        }
+    }
+
+    fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "kimi" => ModelType::Kimi,
+            "gpt-oss" | "gptoss" | "gpt_oss" => ModelType::GptOss,
+            _ => ModelType::Custom(s.to_string()),
         }
     }
 }
@@ -460,6 +483,21 @@ struct OpenFileArgs {
 fn default_max_results() -> u32 { 100 }
 
 
+/// Configuration for KimiChat client
+#[derive(Debug, Clone)]
+struct ClientConfig {
+    /// API key for authentication (not used for llama.cpp)
+    api_key: String,
+    /// Use llama.cpp server instead of Groq
+    use_llama_cpp: bool,
+    /// llama.cpp server base URL (e.g., http://localhost:8080)
+    llama_cpp_url: Option<String>,
+    /// Override for 'kimi' model name
+    model_kimi_override: Option<String>,
+    /// Override for 'gpt_oss' model name
+    model_gpt_oss_override: Option<String>,
+}
+
 struct KimiChat {
     api_key: String,
     work_dir: PathBuf,
@@ -472,6 +510,8 @@ struct KimiChat {
     // Agent system
     agent_coordinator: Option<PlanningCoordinator>,
     use_agents: bool,
+    // Client configuration
+    client_config: ClientConfig,
 }
 
 impl KimiChat {
@@ -515,13 +555,31 @@ impl KimiChat {
     }
 
     fn new(api_key: String, work_dir: PathBuf) -> Self {
-        Self::new_with_agents(api_key, work_dir, false)
+        let config = ClientConfig {
+            api_key: api_key.clone(),
+            use_llama_cpp: false,
+            llama_cpp_url: None,
+            model_kimi_override: None,
+            model_gpt_oss_override: None,
+        };
+        Self::new_with_config(config, work_dir, false)
     }
 
     fn new_with_agents(api_key: String, work_dir: PathBuf, use_agents: bool) -> Self {
+        let config = ClientConfig {
+            api_key: api_key.clone(),
+            use_llama_cpp: false,
+            llama_cpp_url: None,
+            model_kimi_override: None,
+            model_gpt_oss_override: None,
+        };
+        Self::new_with_config(config, work_dir, use_agents)
+    }
+
+    fn new_with_config(client_config: ClientConfig, work_dir: PathBuf, use_agents: bool) -> Self {
         let tool_registry = Self::initialize_tool_registry();
         let agent_coordinator = if use_agents {
-            match Self::initialize_agent_system(&api_key, &tool_registry) {
+            match Self::initialize_agent_system(&client_config, &tool_registry) {
                 Ok(coordinator) => Some(coordinator),
                 Err(e) => {
                     eprintln!("{} Failed to initialize agent system: {}", "❌".red(), e);
@@ -534,7 +592,7 @@ impl KimiChat {
         };
 
         let mut chat = Self {
-            api_key,
+            api_key: client_config.api_key.clone(),
             work_dir,
             client: reqwest::Client::new(),
             messages: Vec::new(),
@@ -546,6 +604,7 @@ impl KimiChat {
             tool_registry,
             agent_coordinator,
             use_agents,
+            client_config,
         };
 
         // Add system message to inform the model about capabilities
@@ -591,25 +650,52 @@ impl KimiChat {
     }
 
     /// Initialize the agent system with configuration files
-    fn initialize_agent_system(api_key: &str, tool_registry: &ToolRegistry) -> Result<PlanningCoordinator> {
+    fn initialize_agent_system(client_config: &ClientConfig, tool_registry: &ToolRegistry) -> Result<PlanningCoordinator> {
         println!("{} Initializing agent system...", "🤖".blue());
 
         // Create agent factory
         let tool_registry_arc = std::sync::Arc::new((*tool_registry).clone());
         let mut agent_factory = AgentFactory::new(tool_registry_arc);
 
-        // Register LLM clients with full model identifiers
-        let kimi_client = std::sync::Arc::new(GroqLlmClient::new(
-            api_key.to_string(),
-            ModelType::Kimi.as_str().to_string()
-        ));
-        let gpt_oss_client = std::sync::Arc::new(GroqLlmClient::new(
-            api_key.to_string(),
-            ModelType::GptOss.as_str().to_string()
-        ));
+        // Determine model names with overrides
+        let kimi_model = client_config.model_kimi_override.clone()
+            .unwrap_or_else(|| ModelType::Kimi.as_str());
+        let gpt_oss_model = client_config.model_gpt_oss_override.clone()
+            .unwrap_or_else(|| ModelType::GptOss.as_str());
 
-        agent_factory.register_llm_client("kimi".to_string(), kimi_client);
-        agent_factory.register_llm_client("gpt_oss".to_string(), gpt_oss_client);
+        // Register LLM clients based on configuration
+        if client_config.use_llama_cpp {
+            let base_url = client_config.llama_cpp_url.clone()
+                .unwrap_or_else(|| "http://localhost:8080".to_string());
+
+            println!("{} Using llama.cpp server at: {}", "🦙".cyan(), base_url);
+
+            let kimi_client = std::sync::Arc::new(LlamaCppClient::new(
+                base_url.clone(),
+                kimi_model
+            ));
+            let gpt_oss_client = std::sync::Arc::new(LlamaCppClient::new(
+                base_url.clone(),
+                gpt_oss_model
+            ));
+
+            agent_factory.register_llm_client("kimi".to_string(), kimi_client);
+            agent_factory.register_llm_client("gpt_oss".to_string(), gpt_oss_client);
+        } else {
+            println!("{} Using Groq API", "🚀".cyan());
+
+            let kimi_client = std::sync::Arc::new(GroqLlmClient::new(
+                client_config.api_key.clone(),
+                kimi_model
+            ));
+            let gpt_oss_client = std::sync::Arc::new(GroqLlmClient::new(
+                client_config.api_key.clone(),
+                gpt_oss_model
+            ));
+
+            agent_factory.register_llm_client("kimi".to_string(), kimi_client);
+            agent_factory.register_llm_client("gpt_oss".to_string(), gpt_oss_client);
+        }
 
         // Create coordinator
         let agent_factory_arc = std::sync::Arc::new(agent_factory);
@@ -1588,10 +1674,11 @@ impl KimiChat {
                         eprintln!("[DEBUG] Logging {} tool calls", tool_call_info.len());
                     }
 
+                    let model_name = self.current_model.as_str();
                     logger.log_with_tool_calls(
                         "assistant",
                         &response.content,
-                        Some(self.current_model.as_str()),
+                        Some(&model_name),
                         tool_call_info,
                     ).await;
                 }
@@ -1727,15 +1814,21 @@ async fn main() -> Result<()> {
     // Load environment variables from .env file if it exists
     dotenvy::dotenv().ok();
 
-    let api_key = env::var("GROQ_API_KEY")
-        .context("GROQ_API_KEY environment variable not set")?;
+    // Parse CLI arguments
+    let cli = Cli::parse();
+
+    // API key is only required if not using llama.cpp
+    let api_key = if cli.llama_cpp_url.is_some() {
+        // llama.cpp doesn't need an API key, use empty string
+        String::new()
+    } else {
+        env::var("GROQ_API_KEY")
+            .context("GROQ_API_KEY environment variable not set. Use --llama-cpp-url to use llama.cpp instead of Groq.")?
+    };
 
     // Use current directory as work_dir so the AI can see project files
     // NB: do NOT use the 'workspace' subdirectory as work_dir
     let work_dir = env::current_dir()?;
-
-    // Parse CLI arguments
-    let cli = Cli::parse();
 
     // If a subcommand was provided, execute it and exit
     if let Some(command) = cli.command {
@@ -1743,6 +1836,15 @@ async fn main() -> Result<()> {
         println!("{}", result);
         return Ok(());
     }
+
+    // Create client configuration from CLI arguments
+    let client_config = ClientConfig {
+        api_key: api_key.clone(),
+        use_llama_cpp: cli.llama_cpp_url.is_some(),
+        llama_cpp_url: cli.llama_cpp_url.clone(),
+        model_kimi_override: cli.model_kimi.clone(),
+        model_gpt_oss_override: cli.model_gpt_oss.clone(),
+    };
 
     // Handle task mode if requested
     if let Some(task_text) = cli.task {
@@ -1756,7 +1858,7 @@ async fn main() -> Result<()> {
         println!("{}", format!("Task: {}", task_text).bright_yellow());
         println!();
 
-        let mut chat = KimiChat::new_with_agents(api_key, work_dir, cli.agents);
+        let mut chat = KimiChat::new_with_config(client_config.clone(), work_dir.clone(), cli.agents);
 
         // Initialize logger for task mode
         chat.logger = match ConversationLogger::new_task_mode(&chat.work_dir).await {
@@ -1823,7 +1925,7 @@ async fn main() -> Result<()> {
 
     println!("{}", "Type 'exit' or 'quit' to exit\n".bright_black());
 
-    let mut chat = KimiChat::new_with_agents(api_key, work_dir, cli.agents);
+    let mut chat = KimiChat::new_with_config(client_config, work_dir, cli.agents);
     // Initialize logger (async) – logs go into the workspace directory
     chat.logger = match ConversationLogger::new(&chat.work_dir).await {
         Ok(l) => Some(l),
