@@ -1674,10 +1674,11 @@ impl KimiChat {
                         eprintln!("[DEBUG] Logging {} tool calls", tool_call_info.len());
                     }
 
+                    let model_name = self.current_model.as_str();
                     logger.log_with_tool_calls(
                         "assistant",
                         &response.content,
-                        Some(self.current_model.as_str()),
+                        Some(&model_name),
                         tool_call_info,
                     ).await;
                 }
