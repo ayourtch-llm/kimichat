@@ -115,6 +115,10 @@ struct Cli {
     /// Enable streaming mode - show AI responses as they're generated
     #[arg(long)]
     stream: bool,
+
+    /// Enable verbose debug output (shows HTTP requests, responses, headers, etc.)
+    #[arg(long, short = 'v')]
+    verbose: bool,
 }
 
 #[derive(Subcommand)]
@@ -587,6 +591,8 @@ struct KimiChat {
     policy_manager: PolicyManager,
     // Streaming mode
     stream_responses: bool,
+    // Verbose debug mode
+    verbose: bool,
 }
 
 impl KimiChat {
@@ -638,7 +644,7 @@ impl KimiChat {
             model_grn_model_override: None,
         };
         let policy_manager = PolicyManager::new();
-        Self::new_with_config(config, work_dir, false, policy_manager, false)
+        Self::new_with_config(config, work_dir, false, policy_manager, false, false)
     }
 
     fn new_with_agents(api_key: String, work_dir: PathBuf, use_agents: bool) -> Self {
@@ -650,10 +656,10 @@ impl KimiChat {
             model_grn_model_override: None,
         };
         let policy_manager = PolicyManager::new();
-        Self::new_with_config(config, work_dir, use_agents, policy_manager, false)
+        Self::new_with_config(config, work_dir, use_agents, policy_manager, false, false)
     }
 
-    fn new_with_config(client_config: ClientConfig, work_dir: PathBuf, use_agents: bool, policy_manager: PolicyManager, stream_responses: bool) -> Self {
+    fn new_with_config(client_config: ClientConfig, work_dir: PathBuf, use_agents: bool, policy_manager: PolicyManager, stream_responses: bool, verbose: bool) -> Self {
         let tool_registry = Self::initialize_tool_registry();
         let agent_coordinator = if use_agents {
             match Self::initialize_agent_system(&client_config, &tool_registry, &policy_manager) {
@@ -684,6 +690,7 @@ impl KimiChat {
             client_config,
             policy_manager,
             stream_responses,
+            verbose,
         };
 
         // Add system message to inform the model about capabilities
@@ -1361,6 +1368,116 @@ impl KimiChat {
         Ok(fixed_any)
     }
 
+    /// Log HTTP request details for debugging
+    fn log_request(&self, url: &str, request: &ChatRequest) {
+        if !self.verbose {
+            return;
+        }
+
+        println!("\n{}", "═".repeat(80).bright_cyan());
+        println!("{}", "🔍 HTTP REQUEST DEBUG".bright_cyan().bold());
+        println!("{}", "═".repeat(80).bright_cyan());
+
+        // Parse URL to show host and port
+        if let Ok(parsed_url) = reqwest::Url::parse(url) {
+            println!("{}: {}", "URL".bright_yellow(), url);
+            println!("{}: {}", "Host".bright_yellow(), parsed_url.host_str().unwrap_or("unknown"));
+            println!("{}: {}", "Port".bright_yellow(), parsed_url.port().map(|p| p.to_string()).unwrap_or_else(||
+                if parsed_url.scheme() == "https" { "443 (default)".to_string() } else { "80 (default)".to_string() }
+            ));
+            println!("{}: {}", "Scheme".bright_yellow(), parsed_url.scheme());
+        } else {
+            println!("{}: {}", "URL".bright_yellow(), url);
+        }
+
+        println!("\n{}", "Headers:".bright_yellow());
+        println!("  Content-Type: application/json");
+        println!("  Authorization: Bearer {}***", &self.api_key.chars().take(10).collect::<String>());
+
+        println!("\n{}", "Request Body:".bright_yellow());
+        match serde_json::to_string_pretty(&request) {
+            Ok(json) => {
+                // Truncate very long requests for readability
+                if json.len() > 5000 {
+                    println!("{}", &json[..5000]);
+                    println!("\n{}", format!("... (truncated, total {} bytes)", json.len()).bright_black());
+                } else {
+                    println!("{}", json);
+                }
+            }
+            Err(e) => println!("{}", format!("Error serializing request: {}", e).red()),
+        }
+
+        println!("{}", "═".repeat(80).bright_cyan());
+        println!();
+    }
+
+    /// Log HTTP response details for debugging
+    fn log_response(&self, status: &reqwest::StatusCode, headers: &reqwest::header::HeaderMap, body: &str) {
+        if !self.verbose {
+            return;
+        }
+
+        println!("\n{}", "═".repeat(80).bright_green());
+        println!("{}", "📥 HTTP RESPONSE DEBUG".bright_green().bold());
+        println!("{}", "═".repeat(80).bright_green());
+
+        println!("{}: {} {}",
+            "Status".bright_yellow(),
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("Unknown")
+        );
+
+        println!("\n{}", "Headers:".bright_yellow());
+        for (name, value) in headers.iter() {
+            if let Ok(val_str) = value.to_str() {
+                println!("  {}: {}", name.as_str().bright_white(), val_str);
+            }
+        }
+
+        println!("\n{}", "Response Body:".bright_yellow());
+        // Try to pretty-print JSON, fall back to raw text
+        if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(body) {
+            match serde_json::to_string_pretty(&json_val) {
+                Ok(pretty) => {
+                    if pretty.len() > 5000 {
+                        println!("{}", &pretty[..5000]);
+                        println!("\n{}", format!("... (truncated, total {} bytes)", pretty.len()).bright_black());
+                    } else {
+                        println!("{}", pretty);
+                    }
+                }
+                Err(_) => println!("{}", body),
+            }
+        } else {
+            // Not JSON, show raw
+            if body.len() > 5000 {
+                println!("{}", &body[..5000]);
+                println!("\n{}", format!("... (truncated, total {} bytes)", body.len()).bright_black());
+            } else {
+                println!("{}", body);
+            }
+        }
+
+        println!("{}", "═".repeat(80).bright_green());
+        println!();
+    }
+
+    /// Log streaming chunk for debugging
+    fn log_stream_chunk(&self, chunk_num: usize, data: &str) {
+        if !self.verbose {
+            return;
+        }
+
+        println!("{}", format!("📦 Stream Chunk #{}: {}", chunk_num,
+            if data.len() > 200 {
+                format!("{}... ({} bytes)", &data[..200], data.len())
+            } else {
+                data.to_string()
+            }
+        ).bright_black());
+    }
+
     /// Handle streaming API response, displaying chunks as they arrive
     async fn call_api_streaming(&self, orig_messages: &[Message]) -> Result<(Message, Option<Usage>, ModelType, Vec<Message>)> {
         use std::io::{self, Write};
@@ -1384,6 +1501,9 @@ impl KimiChat {
             stream: Some(true),
         };
 
+        // Log request details in verbose mode
+        self.log_request(GROQ_API_URL, &request);
+
         let response = self
             .client
             .post(GROQ_API_URL)
@@ -1393,10 +1513,21 @@ impl KimiChat {
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        if !status.is_success() {
             let error_body = response.text().await.unwrap_or_else(|_| "Unable to read error body".to_string());
+
+            // Log error response
+            self.log_response(&status, &headers, &error_body);
+
             return Err(anyhow::anyhow!("API request failed with status {}: {}", status, error_body));
+        }
+
+        if self.verbose {
+            println!("\n{}", "📡 Starting streaming response...".bright_cyan());
+            println!("{}", "═".repeat(80).bright_cyan());
         }
 
         // Process streaming response
@@ -1413,6 +1544,7 @@ impl KimiChat {
 
         // Read the response as a stream of bytes
         let mut stream = response.bytes_stream();
+        let mut chunk_counter = 0;
 
         while let Some(chunk_result) = stream.next().await {
             match chunk_result {
@@ -1431,8 +1563,16 @@ impl KimiChat {
 
                         let data = &line[6..]; // Skip "data: " prefix
 
+                        // Log stream chunk in verbose mode
+                        chunk_counter += 1;
+                        self.log_stream_chunk(chunk_counter, data);
+
                         // Check for stream end marker
                         if data.trim() == "[DONE]" {
+                            if self.verbose {
+                                println!("{}", "✓ Stream completed".bright_green());
+                                println!("{}", "═".repeat(80).bright_green());
+                            }
                             break;
                         }
 
@@ -1512,6 +1652,10 @@ impl KimiChat {
 		tool_choice: "auto".to_string(),
 		stream: None,
 	    };
+
+            // Log request details in verbose mode
+            self.log_request(GROQ_API_URL, &request);
+
             let response = self
                 .client
                 .post(GROQ_API_URL)
@@ -1521,8 +1665,11 @@ impl KimiChat {
                 .send()
                 .await?;
 
+            let status = response.status();
+            let headers = response.headers().clone();
+
             // Handle rate limiting with exponential backoff
-            if response.status() == 429 {
+            if status == 429 {
                 if retry_count >= MAX_RETRIES {
                     anyhow::bail!("Rate limit exceeded after {} retries", MAX_RETRIES);
                 }
@@ -1541,9 +1688,11 @@ impl KimiChat {
             }
 
             // Check for errors and provide detailed debugging
-            if !response.status().is_success() {
-                let status = response.status();
+            if !status.is_success() {
                 let error_body = response.text().await.unwrap_or_else(|_| "Unable to read error body".to_string());
+
+                // Log error response in verbose mode
+                self.log_response(&status, &headers, &error_body);
 
                 // Check if this is a tool-related error
                 if status == 400 && error_body.contains("tool_use_failed") {
@@ -1652,6 +1801,10 @@ impl KimiChat {
             }
 
             let response_text = response.text().await?;
+
+            // Log successful response in verbose mode
+            self.log_response(&status, &headers, &response_text);
+
             let chat_response: ChatResponse = serde_json::from_str(&response_text)
                 .with_context(|| format!("Failed to parse API response: {}", response_text))?;
 
@@ -2109,7 +2262,7 @@ async fn main() -> Result<()> {
         println!("{}", format!("Task: {}", task_text).bright_yellow());
         println!();
 
-        let mut chat = KimiChat::new_with_config(client_config.clone(), work_dir.clone(), cli.agents, policy_manager.clone(), cli.stream);
+        let mut chat = KimiChat::new_with_config(client_config.clone(), work_dir.clone(), cli.agents, policy_manager.clone(), cli.stream, cli.verbose);
 
         // Initialize logger for task mode
         chat.logger = match ConversationLogger::new_task_mode(&chat.work_dir).await {
@@ -2176,7 +2329,7 @@ async fn main() -> Result<()> {
 
     println!("{}", "Type 'exit' or 'quit' to exit\n".bright_black());
 
-    let mut chat = KimiChat::new_with_config(client_config, work_dir, cli.agents, policy_manager, cli.stream);
+    let mut chat = KimiChat::new_with_config(client_config, work_dir, cli.agents, policy_manager, cli.stream, cli.verbose);
     // Initialize logger (async) – logs go into the workspace directory
     chat.logger = match ConversationLogger::new(&chat.work_dir).await {
         Ok(l) => Some(l),
