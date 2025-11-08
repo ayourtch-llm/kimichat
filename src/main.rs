@@ -635,9 +635,25 @@ impl KimiChat {
         }
     }
 
+    /// Normalize API URL by ensuring it has the correct path for OpenAI-compatible endpoints
+    fn normalize_api_url(url: &str) -> String {
+        // If URL already contains a path with "completions", use it as-is
+        if url.contains("/completions") || url.contains("/chat") {
+            return url.to_string();
+        }
+
+        // If URL ends with a slash, append path without leading slash
+        if url.ends_with('/') {
+            format!("{}v1/chat/completions", url)
+        } else {
+            // Append the standard OpenAI-compatible path
+            format!("{}/v1/chat/completions", url)
+        }
+    }
+
     /// Get the API URL to use based on the current model and client configuration
     fn get_api_url(&self, model: &ModelType) -> String {
-        match model {
+        let url = match model {
             ModelType::BluModel => {
                 self.client_config.api_url_blu_model
                     .as_ref()
@@ -658,7 +674,10 @@ impl KimiChat {
                     .map(|s| s.clone())
                     .unwrap_or_else(|| GROQ_API_URL.to_string())
             }
-        }
+        };
+
+        // Normalize the URL to ensure it has the correct path
+        Self::normalize_api_url(&url)
     }
 
     fn new(api_key: String, work_dir: PathBuf) -> Self {
