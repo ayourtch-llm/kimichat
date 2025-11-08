@@ -597,42 +597,28 @@ struct KimiChat {
 
 impl KimiChat {
     /// Generate system prompt based on current model
-    fn get_system_prompt(model: &ModelType) -> String {
-        let base_prompt = format!(
-            "You are an AI assistant with access to file operations and model switching capabilities. \
-            You are currently running as {}. You can switch to other models when appropriate:\n\
-            - grn_model (GrnModel): **Preferred for cost efficiency** - significantly cheaper than BluModel while providing good performance for most tasks\n\
-            - blu_model (BluModel): Use when GrnModel struggles or when you need faster responses\n\n\
-            Available tools (use ONLY these exact names):\n\
-            - read_file: Read entire file contents (always returns full file)\n\
-            - open_file: Read specific line range from a file (use when you only need a section)\n\
-            - write_file: Write/create a file\n\
-            - edit_file: Edit existing file by replacing content (for single edits)\n\
-            - plan_edits: Plan multiple file edits to apply atomically (RECOMMENDED for multiple related changes)\n\
-            - apply_edit_plan: Apply the previously created edit plan\n\
-            - list_files: List files (single-level patterns only, no **)\n\
-            - switch_model: Switch between models\n\n\
-            IMPORTANT WORKFLOW for multiple edits:\n\
-            1. When making multiple changes to files, use plan_edits to create a complete plan\n\
-            2. Review the plan validation output\n\
-            3. Use apply_edit_plan to execute all changes atomically\n\
-            This prevents issues where you lose track of file state between sequential edits.\n\n",
-            model.display_name()
-        );
-
-        if *model == ModelType::GrnModel {
-            format!(
-                "{}CRITICAL WARNING: If you attempt to call ANY tool not listed above (such as 'edit', 'repo_browser.search', \
-                'repo_browser.open_file', or any other made-up tool name), you will be IMMEDIATELY switched to the BluModel model \
-                and your request will be retried. Use ONLY the exact tool names listed above.",
-                base_prompt
-            )
-        } else {
-            format!(
-                "{}IMPORTANT: Only use the exact tool names listed above. Do not make up tool names.",
-                base_prompt
-            )
-        }
+    fn get_system_prompt() -> String {
+        "You are an AI assistant with access to file operations and model switching capabilities. \
+        The system supports multiple models that can be switched during the conversation:\n\
+        - grn_model (GrnModel): **Preferred for cost efficiency** - significantly cheaper than BluModel while providing good performance for most tasks\n\
+        - blu_model (BluModel): Use when GrnModel struggles or when you need faster responses\n\n\
+        Available tools (use ONLY these exact names):\n\
+        - read_file: Read entire file contents (always returns full file)\n\
+        - open_file: Read specific line range from a file (use when you only need a section)\n\
+        - write_file: Write/create a file\n\
+        - edit_file: Edit existing file by replacing content (for single edits)\n\
+        - plan_edits: Plan multiple file edits to apply atomically (RECOMMENDED for multiple related changes)\n\
+        - apply_edit_plan: Apply the previously created edit plan\n\
+        - list_files: List files (single-level patterns only, no **)\n\
+        - switch_model: Switch between models\n\n\
+        IMPORTANT WORKFLOW for multiple edits:\n\
+        1. When making multiple changes to files, use plan_edits to create a complete plan\n\
+        2. Review the plan validation output\n\
+        3. Use apply_edit_plan to execute all changes atomically\n\
+        This prevents issues where you lose track of file state between sequential edits.\n\n\
+        CRITICAL: Only use the exact tool names listed above. Do not make up tool names or use tools not in this list. \
+        Model switches may happen automatically during the conversation based on tool usage and errors. \
+        The currently active model will be indicated in system messages as the conversation progresses.".to_string()
     }
 
     /// Normalize API URL by ensuring it has the correct path for OpenAI-compatible endpoints
@@ -739,11 +725,20 @@ impl KimiChat {
         };
 
         // Add system message to inform the model about capabilities
-        let system_content = Self::get_system_prompt(&chat.current_model);
+        let system_content = Self::get_system_prompt();
 
         chat.messages.push(Message {
             role: "system".to_string(),
             content: system_content,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        });
+
+        // Add initial model notification
+        chat.messages.push(Message {
+            role: "system".to_string(),
+            content: format!("Current model: {}", chat.current_model.display_name()),
             tool_calls: None,
             tool_call_id: None,
             name: None,
@@ -964,6 +959,15 @@ impl KimiChat {
 
         let old_model = self.current_model.clone();
         self.current_model = new_model.clone();
+
+        // Add message to conversation history about model switch
+        self.messages.push(Message {
+            role: "system".to_string(),
+            content: format!("Model switched to: {} (reason: {})", new_model.display_name(), reason),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        });
 
         Ok(format!(
             "Switched from {} to {} - Reason: {}",
@@ -1233,14 +1237,16 @@ impl KimiChat {
                                         "🔄".bright_cyan(),
                                         summary_model.display_name()
                                     );
-                                    self.current_model = summary_model;
+                                    self.current_model = summary_model.clone();
 
-                                    // Update system message
-                                    if let Some(sys_msg) = self.messages.first_mut() {
-                                        if sys_msg.role == "system" {
-                                            sys_msg.content = Self::get_system_prompt(&self.current_model);
-                                        }
-                                    }
+                                    // Add message to conversation history about model switch
+                                    self.messages.push(Message {
+                                        role: "system".to_string(),
+                                        content: format!("Model switched to: {}", summary_model.display_name()),
+                                        tool_calls: None,
+                                        tool_call_id: None,
+                                        name: None,
+                                    });
                                 } else {
                                     println!(
                                         "{} Staying with {}",
@@ -1832,12 +1838,14 @@ impl KimiChat {
                         // Switch to BluModel
                         current_model = ModelType::BluModel;
 
-                        // Update system message
-                        if let Some(sys_msg) = messages.first_mut() {
-                            if sys_msg.role == "system" {
-                                sys_msg.content = Self::get_system_prompt(&current_model);
-                            }
-                        }
+                        // Add message to conversation history about model switch
+                        messages.push(Message {
+                            role: "system".to_string(),
+                            content: format!("Model switched to: {} (reason: invalid tool usage)", current_model.display_name()),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            name: None,
+                        });
 
                         // Retry with BluModel - continue the loop to retry
                         retry_count = 0; // Reset retry count for new model
@@ -1893,12 +1901,14 @@ impl KimiChat {
                         // Switch to GrnModel
                         current_model = ModelType::GrnModel;
 
-                        // Update system message
-                        if let Some(sys_msg) = messages.first_mut() {
-                            if sys_msg.role == "system" {
-                                sys_msg.content = Self::get_system_prompt(&current_model);
-                            }
-                        }
+                        // Add message to conversation history about model switch
+                        messages.push(Message {
+                            role: "system".to_string(),
+                            content: format!("Model switched to: {} (reason: tool call repair failed)", current_model.display_name()),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            name: None,
+                        });
 
                         // Retry with GrnModel - continue the loop to retry
                         retry_count = 0; // Reset retry count for new model
@@ -1999,7 +2009,16 @@ impl KimiChat {
             };
             if self.current_model != current_model {
                 println!("Forced model switch: {:?} -> {:?}", &self.current_model, &current_model);
-                self.current_model = current_model;
+                self.current_model = current_model.clone();
+
+                // Add message to conversation history about model switch
+                self.messages.push(Message {
+                    role: "system".to_string(),
+                    content: format!("Model switched to: {} (reason: forced by API)", current_model.display_name()),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    name: None,
+                });
             }
 
             // Display token usage
