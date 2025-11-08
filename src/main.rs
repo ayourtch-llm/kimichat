@@ -111,6 +111,10 @@ struct Cli {
     /// Learn from user decisions and save them to policy file
     #[arg(long)]
     learn_policies: bool,
+
+    /// Enable streaming mode - show AI responses as they're generated
+    #[arg(long)]
+    stream: bool,
 }
 
 #[derive(Subcommand)]
@@ -544,6 +548,8 @@ struct KimiChat {
     client_config: ClientConfig,
     // Policy manager
     policy_manager: PolicyManager,
+    // Streaming mode
+    stream_responses: bool,
 }
 
 impl KimiChat {
@@ -595,7 +601,7 @@ impl KimiChat {
             model_grn_model_override: None,
         };
         let policy_manager = PolicyManager::new();
-        Self::new_with_config(config, work_dir, false, policy_manager)
+        Self::new_with_config(config, work_dir, false, policy_manager, false)
     }
 
     fn new_with_agents(api_key: String, work_dir: PathBuf, use_agents: bool) -> Self {
@@ -607,10 +613,10 @@ impl KimiChat {
             model_grn_model_override: None,
         };
         let policy_manager = PolicyManager::new();
-        Self::new_with_config(config, work_dir, use_agents, policy_manager)
+        Self::new_with_config(config, work_dir, use_agents, policy_manager, false)
     }
 
-    fn new_with_config(client_config: ClientConfig, work_dir: PathBuf, use_agents: bool, policy_manager: PolicyManager) -> Self {
+    fn new_with_config(client_config: ClientConfig, work_dir: PathBuf, use_agents: bool, policy_manager: PolicyManager, stream_responses: bool) -> Self {
         let tool_registry = Self::initialize_tool_registry();
         let agent_coordinator = if use_agents {
             match Self::initialize_agent_system(&client_config, &tool_registry, &policy_manager) {
@@ -640,6 +646,7 @@ impl KimiChat {
             use_agents,
             client_config,
             policy_manager,
+            stream_responses,
         };
 
         // Add system message to inform the model about capabilities
@@ -841,6 +848,34 @@ impl KimiChat {
         // Return just the content without any metadata
         // This prevents the "[Total: X lines]" from being accidentally included in edits/writes
         Ok(content)
+    }
+
+    /// Display response with streaming effect if enabled
+    fn display_response(&self, response: &str, model_name: &str) {
+        use std::io::{self, Write};
+
+        let model_label = format!("[{}]", model_name).bright_magenta();
+        let assistant_label = "Assistant:".bright_blue().bold();
+
+        if self.stream_responses {
+            // Clear the "thinking..." line and show streaming effect
+            print!("\r"); // Carriage return to start of line
+            print!("\x1B[K"); // Clear line
+            print!("{} {} ", model_label, assistant_label);
+            io::stdout().flush().unwrap();
+
+            // Display characters with small delay for typewriter effect
+            for ch in response.chars() {
+                print!("{}", ch);
+                io::stdout().flush().unwrap();
+                // Small delay for visual effect (can be adjusted or removed for actual streaming)
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            println!("\n");
+        } else {
+            // Normal display
+            println!("\n{} {} {}\n", model_label, assistant_label, response);
+        }
     }
 
     fn switch_model(&mut self, model_str: &str, reason: &str) -> Result<String> {
@@ -1928,7 +1963,7 @@ async fn main() -> Result<()> {
         println!("{}", format!("Task: {}", task_text).bright_yellow());
         println!();
 
-        let mut chat = KimiChat::new_with_config(client_config.clone(), work_dir.clone(), cli.agents, policy_manager.clone());
+        let mut chat = KimiChat::new_with_config(client_config.clone(), work_dir.clone(), cli.agents, policy_manager.clone(), cli.stream);
 
         // Initialize logger for task mode
         chat.logger = match ConversationLogger::new_task_mode(&chat.work_dir).await {
@@ -1995,7 +2030,7 @@ async fn main() -> Result<()> {
 
     println!("{}", "Type 'exit' or 'quit' to exit\n".bright_black());
 
-    let mut chat = KimiChat::new_with_config(client_config, work_dir, cli.agents, policy_manager);
+    let mut chat = KimiChat::new_with_config(client_config, work_dir, cli.agents, policy_manager, cli.stream);
     // Initialize logger (async) – logs go into the workspace directory
     chat.logger = match ConversationLogger::new(&chat.work_dir).await {
         Ok(l) => Some(l),
@@ -2072,6 +2107,13 @@ async fn main() -> Result<()> {
                     logger.log("user", line, None, false).await;
                 }
 
+                // Show thinking indicator when streaming is enabled
+                if chat.stream_responses {
+                    use std::io::{self, Write};
+                    print!("{} ", "🤔 Thinking...".bright_black());
+                    io::stdout().flush().unwrap();
+                }
+
                 let response = if chat.use_agents && chat.agent_coordinator.is_some() {
                     // Use agent system
                     match chat.process_with_agents(line).await {
@@ -2103,8 +2145,8 @@ async fn main() -> Result<()> {
                 if let Some(logger) = &mut chat.logger {
                     logger.log("assistant", &response, None, false).await;
                 }
-                let model_name = format!("[{}]", chat.current_model.display_name()).bright_magenta();
-                println!("\n{} {} {}\n", model_name, "Assistant:".bright_blue().bold(), response);
+                // Display response with streaming if enabled
+                chat.display_response(&response, &chat.current_model.display_name());
             }
             Err(ReadlineError::Interrupted) => {
                 println!("{}", "^C".bright_black());
