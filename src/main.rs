@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 use std::ops::RangeInclusive;
 use std::io::BufReader;
@@ -808,7 +808,8 @@ impl KimiChat {
             std::sync::Arc::new(GroqLlmClient::new(
                 client_config.api_key.clone(),
                 blu_model,
-                GROQ_API_URL.to_string()
+                GROQ_API_URL.to_string(),
+                "blu_model".to_string()
             ))
         };
 
@@ -824,7 +825,8 @@ impl KimiChat {
             std::sync::Arc::new(GroqLlmClient::new(
                 client_config.api_key.clone(),
                 grn_model,
-                GROQ_API_URL.to_string()
+                GROQ_API_URL.to_string(),
+                "grn_model".to_string()
             ))
         };
 
@@ -879,7 +881,8 @@ impl KimiChat {
             let llm_client = std::sync::Arc::new(GroqLlmClient::new(
                 self.api_key.clone(),
                 self.current_model.as_str().to_string(),
-                api_url
+                api_url,
+                "process_with_agents".to_string()
             ));
 
             // Convert message history to agent format
@@ -1094,6 +1097,9 @@ impl KimiChat {
         // Get the appropriate API URL for the summary model
         let api_url = self.get_api_url(&summary_model);
 
+        // Log request to file for persistent debugging
+        let _ = self.log_request_to_file(&api_url, &request, &summary_model);
+
         let response = self.client
             .post(&api_url)
             .header("Authorization", format!("Bearer {}", self.api_key))
@@ -1203,6 +1209,9 @@ impl KimiChat {
                     // Get the appropriate API URL for the current model
                     let decision_api_url = self.get_api_url(&self.current_model);
 
+                    // Log request to file for persistent debugging
+                    let _ = self.log_request_to_file(&decision_api_url, &decision_request, &self.current_model);
+
                     let decision_response = self.client
                         .post(&decision_api_url)
                         .header("Authorization", format!("Bearer {}", self.api_key))
@@ -1295,6 +1304,9 @@ impl KimiChat {
 
         // Make API call using BluModel's API URL
         let repair_api_url = self.get_api_url(&ModelType::BluModel);
+
+        // Log request to file for persistent debugging
+        let _ = self.log_request_to_file(&repair_api_url, &repair_request, &ModelType::BluModel);
 
         let response = self.client
             .post(&repair_api_url)
@@ -1471,6 +1483,64 @@ impl KimiChat {
         println!();
     }
 
+    /// Log HTTP request to file for persistent debugging
+    fn log_request_to_file(&self, url: &str, request: &ChatRequest, model: &ModelType) -> Result<()> {
+        // Create logs directory if it doesn't exist
+        fs::create_dir_all("logs")?;
+
+        // Generate timestamp for filename
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Create filename with timestamp and model name
+        let model_name = model.as_str().replace('/', "-");
+        let filename = format!("logs/req-{}-{}.txt", timestamp, model_name);
+
+        // Build the log content
+        let mut log_content = String::new();
+        log_content.push_str(&format!("HTTP REQUEST LOG\n"));
+        log_content.push_str(&format!("================\n\n"));
+        log_content.push_str(&format!("Timestamp: {}\n", timestamp));
+        log_content.push_str(&format!("Model: {}\n\n", model.as_str()));
+
+        // Parse URL to show host and port
+        if let Ok(parsed_url) = reqwest::Url::parse(url) {
+            log_content.push_str(&format!("URL: {}\n", url));
+            log_content.push_str(&format!("Host: {}\n", parsed_url.host_str().unwrap_or("unknown")));
+            log_content.push_str(&format!("Port: {}\n",
+                parsed_url.port().map(|p| p.to_string()).unwrap_or_else(||
+                    if parsed_url.scheme() == "https" { "443 (default)".to_string() } else { "80 (default)".to_string() }
+                )
+            ));
+            log_content.push_str(&format!("Scheme: {}\n\n", parsed_url.scheme()));
+        } else {
+            log_content.push_str(&format!("URL: {}\n\n", url));
+        }
+
+        log_content.push_str("Headers:\n");
+        log_content.push_str("  Content-Type: application/json\n");
+        log_content.push_str(&format!("  Authorization: Bearer {}***\n\n", &self.api_key.chars().take(10).collect::<String>()));
+
+        log_content.push_str("Request Body:\n");
+        match serde_json::to_string_pretty(&request) {
+            Ok(json) => {
+                log_content.push_str(&json);
+                log_content.push_str("\n");
+            }
+            Err(e) => {
+                log_content.push_str(&format!("Error serializing request: {}\n", e));
+            }
+        }
+
+        // Write to file
+        fs::write(&filename, log_content)
+            .with_context(|| format!("Failed to write request log to {}", filename))?;
+
+        Ok(())
+    }
+
     /// Log HTTP response details for debugging
     fn log_response(&self, status: &reqwest::StatusCode, headers: &reqwest::header::HeaderMap, body: &str) {
         if !self.verbose {
@@ -1557,6 +1627,9 @@ impl KimiChat {
 
         // Log request details in verbose mode
         self.log_request(&api_url, &request);
+
+        // Log request to file for persistent debugging
+        let _ = self.log_request_to_file(&api_url, &request, &current_model);
 
         let response = self
             .client
@@ -1705,6 +1778,9 @@ impl KimiChat {
 
             // Log request details in verbose mode
             self.log_request(&api_url, &request);
+
+            // Log request to file for persistent debugging
+            let _ = self.log_request_to_file(&api_url, &request, &current_model);
 
             let response = self
                 .client
@@ -1894,7 +1970,8 @@ impl KimiChat {
             std::sync::Arc::new(crate::agents::groq_client::GroqLlmClient::new(
                 self.api_key.clone(),
                 "kimi".to_string(),
-                blu_model_url
+                blu_model_url,
+                "progress_evaluator".to_string()
             )),
             0.6, // Minimum confidence threshold
             PROGRESS_EVAL_INTERVAL,

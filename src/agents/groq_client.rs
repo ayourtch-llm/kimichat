@@ -1,22 +1,26 @@
 use crate::agents::agent::{LlmClient, LlmResponse, ChatMessage, ToolDefinition};
-use anyhow::Result;
+use anyhow::{Result, Context};
 use async_trait::async_trait;
 use serde_json::Value;
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Groq LLM client implementation that bridges with the existing KimiChat system
 pub struct GroqLlmClient {
     api_key: String,
     model: String,
     api_url: String,
+    agent_name: String,
     client: reqwest::Client,
 }
 
 impl GroqLlmClient {
-    pub fn new(api_key: String, model: String, api_url: String) -> Self {
+    pub fn new(api_key: String, model: String, api_url: String, agent_name: String) -> Self {
         Self {
             api_key,
             model,
             api_url,
+            agent_name,
             client: reqwest::Client::new(),
         }
     }
@@ -26,6 +30,9 @@ impl GroqLlmClient {
 impl LlmClient for GroqLlmClient {
     async fn chat(&self, messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Result<LlmResponse> {
         let request = self.build_chat_request(messages, tools).await?;
+
+        // Log request to file for persistent debugging
+        let _ = self.log_request_to_file(&self.api_url, &request);
 
         let response = self.client
             .post(&self.api_url)
@@ -88,6 +95,9 @@ impl LlmClient for GroqLlmClient {
             "max_tokens": 2000
         });
 
+        // Log request to file for persistent debugging
+        let _ = self.log_request_to_file(&self.api_url, &api_request);
+
         let client = reqwest::Client::new();
         let response = client
             .post(&self.api_url)
@@ -115,6 +125,64 @@ impl LlmClient for GroqLlmClient {
 }
 
 impl GroqLlmClient {
+    fn log_request_to_file(&self, url: &str, request: &serde_json::Value) -> Result<()> {
+        // Create logs directory if it doesn't exist
+        fs::create_dir_all("logs")?;
+
+        // Generate timestamp for filename
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Create filename with timestamp and model name
+        let model_name = self.model.replace('/', "-");
+        let filename = format!("logs/req-{}-{}-agent-{}.txt", timestamp, model_name, self.agent_name);
+
+        // Build the log content
+        let mut log_content = String::new();
+        log_content.push_str(&format!("HTTP REQUEST LOG (AGENT)\n"));
+        log_content.push_str(&format!("========================\n\n"));
+        log_content.push_str(&format!("Timestamp: {}\n", timestamp));
+        log_content.push_str(&format!("Model: {}\n", self.model));
+        log_content.push_str(&format!("Agent: {}\n\n", self.agent_name));
+
+        // Parse URL to show host and port
+        if let Ok(parsed_url) = reqwest::Url::parse(url) {
+            log_content.push_str(&format!("URL: {}\n", url));
+            log_content.push_str(&format!("Host: {}\n", parsed_url.host_str().unwrap_or("unknown")));
+            log_content.push_str(&format!("Port: {}\n",
+                parsed_url.port().map(|p| p.to_string()).unwrap_or_else(||
+                    if parsed_url.scheme() == "https" { "443 (default)".to_string() } else { "80 (default)".to_string() }
+                )
+            ));
+            log_content.push_str(&format!("Scheme: {}\n\n", parsed_url.scheme()));
+        } else {
+            log_content.push_str(&format!("URL: {}\n\n", url));
+        }
+
+        log_content.push_str("Headers:\n");
+        log_content.push_str("  Content-Type: application/json\n");
+        log_content.push_str(&format!("  Authorization: Bearer {}***\n\n", &self.api_key.chars().take(10).collect::<String>()));
+
+        log_content.push_str("Request Body:\n");
+        match serde_json::to_string_pretty(&request) {
+            Ok(json) => {
+                log_content.push_str(&json);
+                log_content.push_str("\n");
+            }
+            Err(e) => {
+                log_content.push_str(&format!("Error serializing request: {}\n", e));
+            }
+        }
+
+        // Write to file
+        fs::write(&filename, log_content)
+            .with_context(|| format!("Failed to write request log to {}", filename))?;
+
+        Ok(())
+    }
+
     async fn build_chat_request(&self, messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Result<serde_json::Value> {
         let chat_messages: Vec<crate::Message> = messages.into_iter().map(|msg| {
             crate::Message {
