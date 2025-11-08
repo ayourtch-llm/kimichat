@@ -91,8 +91,11 @@ impl ToolRegistry {
 
     /// Get all tool definitions in OpenAI format
     pub fn get_openai_tool_definitions(&self) -> Vec<serde_json::Value> {
-        self.tools.values()
-            .map(|tool| tool.to_openai_definition())
+        let mut tools: Vec<_> = self.tools.iter().collect();
+        // Sort by tool name to ensure consistent ordering (critical for prompt caching)
+        tools.sort_by_key(|(name, _)| name.as_str());
+        tools.into_iter()
+            .map(|(_, tool)| tool.to_openai_definition())
             .collect()
     }
 
