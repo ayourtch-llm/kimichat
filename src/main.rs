@@ -490,7 +490,26 @@ struct StreamDelta {
     #[serde(default)]
     content: Option<String>,
     #[serde(default)]
-    tool_calls: Option<Vec<ToolCall>>,
+    tool_calls: Option<Vec<StreamToolCallDelta>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct StreamToolCallDelta {
+    index: usize,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(rename = "type", default)]
+    tool_type: Option<String>,
+    #[serde(default)]
+    function: Option<StreamFunctionDelta>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct StreamFunctionDelta {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1654,7 +1673,7 @@ impl KimiChat {
 
         // Process streaming response
         let mut accumulated_content = String::new();
-        let mut accumulated_tool_calls: Option<Vec<ToolCall>> = None;
+        let mut accumulated_tool_calls: Vec<ToolCall> = Vec::new();
         let mut role = String::new();
         let mut usage: Option<Usage> = None;
         let mut buffer = String::new();
@@ -1726,9 +1745,47 @@ impl KimiChat {
                                     io::stdout().flush().unwrap();
                                 }
 
-                                // Accumulate tool calls if present
-                                if let Some(tool_calls) = &delta.tool_calls {
-                                    accumulated_tool_calls = Some(tool_calls.clone());
+                                // Accumulate tool calls if present (streaming deltas)
+                                if let Some(tool_call_deltas) = &delta.tool_calls {
+                                    if first_chunk {
+                                        // Clear thinking indicator
+                                        print!("\r\x1B[K");
+                                        print!("🔧 Tool calls...");
+                                        io::stdout().flush().unwrap();
+                                        first_chunk = false;
+                                    }
+
+                                    for delta_call in tool_call_deltas {
+                                        // Ensure we have enough slots in the accumulated array
+                                        while accumulated_tool_calls.len() <= delta_call.index {
+                                            accumulated_tool_calls.push(ToolCall {
+                                                id: String::new(),
+                                                tool_type: "function".to_string(),
+                                                function: FunctionCall {
+                                                    name: String::new(),
+                                                    arguments: String::new(),
+                                                },
+                                            });
+                                        }
+
+                                        let tool_call = &mut accumulated_tool_calls[delta_call.index];
+
+                                        // Merge the delta into the accumulated tool call
+                                        if let Some(id) = &delta_call.id {
+                                            tool_call.id = id.clone();
+                                        }
+                                        if let Some(tool_type) = &delta_call.tool_type {
+                                            tool_call.tool_type = tool_type.clone();
+                                        }
+                                        if let Some(function_delta) = &delta_call.function {
+                                            if let Some(name) = &function_delta.name {
+                                                tool_call.function.name = name.clone();
+                                            }
+                                            if let Some(args) = &function_delta.arguments {
+                                                tool_call.function.arguments.push_str(args);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1744,7 +1801,7 @@ impl KimiChat {
         let message = Message {
             role: if role.is_empty() { "assistant".to_string() } else { role },
             content: accumulated_content,
-            tool_calls: accumulated_tool_calls,
+            tool_calls: if accumulated_tool_calls.is_empty() { None } else { Some(accumulated_tool_calls) },
             tool_call_id: None,
             name: None,
         };
