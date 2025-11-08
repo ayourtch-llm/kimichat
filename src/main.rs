@@ -418,11 +418,11 @@ struct FunctionDef {
 #[derive(Debug, Serialize)]
 struct ChatRequest {
     model: String,
-    messages: Vec<Message>,
-    tools: Vec<Tool>,
-    tool_choice: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    tool_choice: String,
+    tools: Vec<Tool>,
+    messages: Vec<Message>,
 }
 
 #[derive(Debug, Deserialize)]
