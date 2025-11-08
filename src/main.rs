@@ -417,6 +417,8 @@ struct ChatRequest {
     messages: Vec<Message>,
     tools: Vec<Tool>,
     tool_choice: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -450,6 +452,41 @@ struct Choice {
     finish_reason: Option<String>,
     #[serde(default)]
     logprobs: Option<serde_json::Value>,
+}
+
+// Structures for streaming responses
+#[derive(Debug, Deserialize)]
+struct StreamChunk {
+    choices: Vec<StreamChoice>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    object: Option<String>,
+    #[serde(default)]
+    created: Option<i64>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    usage: Option<Usage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamChoice {
+    delta: StreamDelta,
+    #[serde(default)]
+    index: Option<i32>,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamDelta {
+    #[serde(default)]
+    role: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<ToolCall>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -850,34 +887,6 @@ impl KimiChat {
         Ok(content)
     }
 
-    /// Display response with streaming effect if enabled
-    fn display_response(&self, response: &str, model_name: &str) {
-        use std::io::{self, Write};
-
-        let model_label = format!("[{}]", model_name).bright_magenta();
-        let assistant_label = "Assistant:".bright_blue().bold();
-
-        if self.stream_responses {
-            // Clear the "thinking..." line and show streaming effect
-            print!("\r"); // Carriage return to start of line
-            print!("\x1B[K"); // Clear line
-            print!("{} {} ", model_label, assistant_label);
-            io::stdout().flush().unwrap();
-
-            // Display characters with small delay for typewriter effect
-            for ch in response.chars() {
-                print!("{}", ch);
-                io::stdout().flush().unwrap();
-                // Small delay for visual effect (can be adjusted or removed for actual streaming)
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            println!("\n");
-        } else {
-            // Normal display
-            println!("\n{} {} {}\n", model_label, assistant_label, response);
-        }
-    }
-
     fn switch_model(&mut self, model_str: &str, reason: &str) -> Result<String> {
         let new_model = match model_str.to_lowercase().as_str() {
             "blu_model" | "blu-model" => ModelType::BluModel,
@@ -1021,6 +1030,7 @@ impl KimiChat {
             messages: summary_history,
             tools: vec![],
             tool_choice: "none".to_string(),
+            stream: None,
         };
 
         let response = self.client
@@ -1126,6 +1136,7 @@ impl KimiChat {
                         messages: decision_prompt,
                         tools: vec![],
                         tool_choice: "none".to_string(),
+                        stream: None,
                     };
 
                     let decision_response = self.client
@@ -1215,6 +1226,7 @@ impl KimiChat {
             ],
             tools: vec![], // No tools for repair request
             tool_choice: "none".to_string(),
+            stream: None,
         };
 
         // Make API call
@@ -1349,6 +1361,135 @@ impl KimiChat {
         Ok(fixed_any)
     }
 
+    /// Handle streaming API response, displaying chunks as they arrive
+    async fn call_api_streaming(&self, orig_messages: &[Message]) -> Result<(Message, Option<Usage>, ModelType, Vec<Message>)> {
+        use std::io::{self, Write};
+        use futures_util::StreamExt;
+
+        let mut current_model = self.current_model.clone();
+        let mut messages = orig_messages.to_vec().clone();
+
+        // Validate and fix tool calls before sending
+        if let Ok(fixed) = self.validate_and_fix_tool_calls(&mut messages) {
+            if fixed {
+                eprintln!("{} Tool calls were automatically fixed before sending to API", "✅".green());
+            }
+        }
+
+        let request = ChatRequest {
+            model: current_model.as_str().to_string(),
+            messages: messages.clone(),
+            tools: self.get_tools(),
+            tool_choice: "auto".to_string(),
+            stream: Some(true),
+        };
+
+        let response = self
+            .client
+            .post(GROQ_API_URL)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "Unable to read error body".to_string());
+            return Err(anyhow::anyhow!("API request failed with status {}: {}", status, error_body));
+        }
+
+        // Process streaming response
+        let mut accumulated_content = String::new();
+        let mut accumulated_tool_calls: Option<Vec<ToolCall>> = None;
+        let mut role = String::new();
+        let mut usage: Option<Usage> = None;
+        let mut buffer = String::new();
+
+        // Show thinking indicator
+        print!("🤔 Thinking...");
+        io::stdout().flush().unwrap();
+        let mut first_chunk = true;
+
+        // Read the response as a stream of bytes
+        let mut stream = response.bytes_stream();
+
+        while let Some(chunk_result) = stream.next().await {
+            match chunk_result {
+                Ok(bytes) => {
+                    buffer.push_str(&String::from_utf8_lossy(&bytes));
+
+                    // Process complete lines (SSE format: "data: {json}\n\n")
+                    while let Some(line_end) = buffer.find("\n\n") {
+                        let line = buffer[..line_end].to_string();
+                        buffer = buffer[line_end + 2..].to_string();
+
+                        // Skip empty lines and non-data lines
+                        if line.trim().is_empty() || !line.starts_with("data: ") {
+                            continue;
+                        }
+
+                        let data = &line[6..]; // Skip "data: " prefix
+
+                        // Check for stream end marker
+                        if data.trim() == "[DONE]" {
+                            break;
+                        }
+
+                        // Parse the JSON chunk
+                        if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
+                            if let Some(usage_data) = chunk.usage {
+                                usage = Some(usage_data);
+                            }
+
+                            if let Some(choice) = chunk.choices.first() {
+                                let delta = &choice.delta;
+
+                                // Update role if present
+                                if let Some(r) = &delta.role {
+                                    role = r.clone();
+                                }
+
+                                // Accumulate content and display it
+                                if let Some(content) = &delta.content {
+                                    if first_chunk {
+                                        // Clear thinking indicator
+                                        print!("\r\x1B[K");
+                                        io::stdout().flush().unwrap();
+                                        first_chunk = false;
+                                    }
+
+                                    accumulated_content.push_str(content);
+                                    print!("{}", content);
+                                    io::stdout().flush().unwrap();
+                                }
+
+                                // Accumulate tool calls if present
+                                if let Some(tool_calls) = &delta.tool_calls {
+                                    accumulated_tool_calls = Some(tool_calls.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => return Err(anyhow::anyhow!("Error reading stream: {}", e)),
+            }
+        }
+
+        println!(); // New line after streaming complete
+
+        // Build the final message
+        let message = Message {
+            role: if role.is_empty() { "assistant".to_string() } else { role },
+            content: accumulated_content,
+            tool_calls: accumulated_tool_calls,
+            tool_call_id: None,
+            name: None,
+        };
+
+        Ok((message, usage, current_model, messages))
+    }
+
     async fn call_api(&self, orig_messages: &[Message]) -> Result<(Message, Option<Usage>, ModelType, Vec<Message>)> {
         let mut current_model = self.current_model.clone();
         let mut messages = orig_messages.to_vec().clone();
@@ -1369,6 +1510,7 @@ impl KimiChat {
 		messages: messages.clone(),
 		tools: self.get_tools(),
 		tool_choice: "auto".to_string(),
+		stream: None,
 	    };
             let response = self
                 .client
@@ -1560,7 +1702,11 @@ impl KimiChat {
         let mut errors_encountered: Vec<String> = Vec::new();
 
         loop {
-            let (response, usage, current_model, messages) = self.call_api(&self.messages).await?;
+            let (response, usage, current_model, messages) = if self.stream_responses {
+                self.call_api_streaming(&self.messages).await?
+            } else {
+                self.call_api(&self.messages).await?
+            };
             self.messages = messages;
             if self.current_model != current_model {
                 println!("Forced model switch: {:?} -> {:?}", &self.current_model, &current_model);
@@ -2145,8 +2291,13 @@ async fn main() -> Result<()> {
                 if let Some(logger) = &mut chat.logger {
                     logger.log("assistant", &response, None, false).await;
                 }
-                // Display response with streaming if enabled
-                chat.display_response(&response, &chat.current_model.display_name());
+
+                // Display response if not streaming (streaming already displayed it)
+                if !chat.stream_responses {
+                    let model_label = format!("[{}]", chat.current_model.display_name()).bright_magenta();
+                    let assistant_label = "Assistant:".bright_blue().bold();
+                    println!("\n{} {} {}\n", model_label, assistant_label, response);
+                }
             }
             Err(ReadlineError::Interrupted) => {
                 println!("{}", "^C".bright_black());
