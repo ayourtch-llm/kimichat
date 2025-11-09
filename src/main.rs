@@ -592,6 +592,15 @@ struct ClientConfig {
     model_grn_model_override: Option<String>,
 }
 
+/// Serializable state for saving/loading conversations
+#[derive(Debug, Serialize, Deserialize)]
+struct ChatState {
+    messages: Vec<Message>,
+    current_model: ModelType,
+    total_tokens_used: usize,
+    version: String,
+}
+
 struct KimiChat {
     api_key: String,
     work_dir: PathBuf,
@@ -1076,6 +1085,49 @@ impl KimiChat {
             old_model.display_name(),
             new_model.display_name(),
             reason
+        ))
+    }
+
+    fn save_state(&self, file_path: &str) -> Result<String> {
+        let state = ChatState {
+            messages: self.messages.clone(),
+            current_model: self.current_model.clone(),
+            total_tokens_used: self.total_tokens_used,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&state)
+            .context("Failed to serialize chat state")?;
+
+        fs::write(file_path, json)
+            .with_context(|| format!("Failed to write state to file: {}", file_path))?;
+
+        Ok(format!(
+            "Saved conversation state to {} ({} messages, {} total tokens)",
+            file_path,
+            self.messages.len(),
+            self.total_tokens_used
+        ))
+    }
+
+    fn load_state(&mut self, file_path: &str) -> Result<String> {
+        let json = fs::read_to_string(file_path)
+            .with_context(|| format!("Failed to read state from file: {}", file_path))?;
+
+        let state: ChatState = serde_json::from_str(&json)
+            .context("Failed to deserialize chat state")?;
+
+        // Restore state
+        self.messages = state.messages;
+        self.current_model = state.current_model;
+        self.total_tokens_used = state.total_tokens_used;
+
+        Ok(format!(
+            "Loaded conversation state from {} ({} messages, {} total tokens, version: {})",
+            file_path,
+            self.messages.len(),
+            self.total_tokens_used,
+            state.version
         ))
     }
 
@@ -2712,6 +2764,25 @@ async fn main() -> Result<()> {
                 if line == "exit" || line == "quit" {
                     println!("{}", "Goodbye!".bright_cyan());
                     break;
+                }
+
+                // Handle /save and /load commands
+                if line.starts_with("/save ") {
+                    let file_path = line[6..].trim();
+                    match chat.save_state(file_path) {
+                        Ok(msg) => println!("{} {}", "💾".bright_green(), msg),
+                        Err(e) => eprintln!("{} Failed to save: {}", "❌".bright_red(), e),
+                    }
+                    continue;
+                }
+
+                if line.starts_with("/load ") {
+                    let file_path = line[6..].trim();
+                    match chat.load_state(file_path) {
+                        Ok(msg) => println!("{} {}", "📂".bright_green(), msg),
+                        Err(e) => eprintln!("{} Failed to load: {}", "❌".bright_red(), e),
+                    }
+                    continue;
                 }
 
                 rl.add_history_entry(line)?;
