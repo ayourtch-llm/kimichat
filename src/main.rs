@@ -2653,6 +2653,38 @@ async fn main() -> Result<()> {
     let api_key_grn_model = env::var("ANTHROPIC_AUTH_TOKEN_GRN").ok()
         .or_else(|| env::var("ANTHROPIC_AUTH_TOKEN").ok());
 
+    // Auto-detect Anthropic and set appropriate model names if not overridden
+    let is_anthropic_blu = api_url_blu_model.as_ref()
+        .map(|url| url.contains("anthropic"))
+        .unwrap_or(false);
+    let is_anthropic_grn = api_url_grn_model.as_ref()
+        .map(|url| url.contains("anthropic"))
+        .unwrap_or(false);
+
+    let model_blu_override = cli.model_blu_model.clone()
+        .or_else(|| cli.model.clone())
+        .or_else(|| {
+            if is_anthropic_blu {
+                env::var("ANTHROPIC_MODEL_BLU").ok()
+                    .or_else(|| env::var("ANTHROPIC_MODEL").ok())
+                    .or(Some("claude-3-5-sonnet-20241022".to_string()))
+            } else {
+                None
+            }
+        });
+
+    let model_grn_override = cli.model_grn_model.clone()
+        .or_else(|| cli.model.clone())
+        .or_else(|| {
+            if is_anthropic_grn {
+                env::var("ANTHROPIC_MODEL_GRN").ok()
+                    .or_else(|| env::var("ANTHROPIC_MODEL").ok())
+                    .or(Some("claude-3-5-sonnet-20241022".to_string()))
+            } else {
+                None
+            }
+        });
+
     // API key is only required if at least one model uses Groq (no API URL specified and no per-model key)
     let needs_groq_key = (api_url_blu_model.is_none() && api_key_blu_model.is_none())
                       || (api_url_grn_model.is_none() && api_key_grn_model.is_none());
@@ -2677,16 +2709,26 @@ async fn main() -> Result<()> {
     }
 
     // Create client configuration from CLI arguments
-    // Priority: specific flags override general --model flag
+    // Priority: specific flags override general --model flag, with auto-detection for Anthropic
     let client_config = ClientConfig {
         api_key: api_key.clone(),
-        api_url_blu_model,
-        api_url_grn_model,
+        api_url_blu_model: api_url_blu_model.clone(),
+        api_url_grn_model: api_url_grn_model.clone(),
         api_key_blu_model,
         api_key_grn_model,
-        model_blu_model_override: cli.model_blu_model.clone().or_else(|| cli.model.clone()),
-        model_grn_model_override: cli.model_grn_model.clone().or_else(|| cli.model.clone()),
+        model_blu_model_override: model_blu_override.clone(),
+        model_grn_model_override: model_grn_override.clone(),
     };
+
+    // Inform user about auto-detected Anthropic configuration
+    if is_anthropic_blu {
+        let model_name = model_blu_override.as_ref().unwrap();
+        eprintln!("{} Anthropic detected for blu_model: using model '{}'", "🤖".cyan(), model_name);
+    }
+    if is_anthropic_grn {
+        let model_name = model_grn_override.as_ref().unwrap();
+        eprintln!("{} Anthropic detected for grn_model: using model '{}'", "🤖".cyan(), model_name);
+    }
 
     // Create policy manager based on CLI arguments
     let policy_manager = if cli.auto_confirm {
