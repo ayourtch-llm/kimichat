@@ -631,6 +631,8 @@ struct KimiChat {
     stream_responses: bool,
     // Verbose debug mode
     verbose: bool,
+    // Debug level for controlling debug output (0=off, 1=basic, 2=detailed, etc.)
+    debug_level: u32,
 }
 
 impl KimiChat {
@@ -856,6 +858,21 @@ impl KimiChat {
         Self::new_with_config(config, work_dir, use_agents, policy_manager, false, false)
     }
 
+    /// Set the debug level (0=off, 1=basic, 2=detailed, etc.)
+    fn set_debug_level(&mut self, level: u32) {
+        self.debug_level = level;
+    }
+
+    /// Get the current debug level
+    fn get_debug_level(&self) -> u32 {
+        self.debug_level
+    }
+
+    /// Check if debug output should be shown for a given level
+    fn should_show_debug(&self, level: u32) -> bool {
+        self.debug_level & (1 << (level - 1)) != 0
+    }
+
     fn new_with_config(client_config: ClientConfig, work_dir: PathBuf, use_agents: bool, policy_manager: PolicyManager, stream_responses: bool, verbose: bool) -> Self {
         let tool_registry = Self::initialize_tool_registry();
         let agent_coordinator = if use_agents {
@@ -895,6 +912,7 @@ impl KimiChat {
             policy_manager,
             stream_responses,
             verbose,
+            debug_level: 0, // Default debug level is 0 (off)
         };
 
         // Add system message to inform the model about capabilities
@@ -2135,13 +2153,19 @@ impl KimiChat {
             (self.client_config.api_url_blu_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
             (self.client_config.api_url_grn_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false));
 
-        println!("🔧 DEBUG: current_model = {:?}", current_model);
-        println!("🔧 DEBUG: should_use_anthropic = {}", should_use_anthropic);
+        if self.should_show_debug(1) {
+            println!("🔧 DEBUG: current_model = {:?}", current_model);
+            println!("🔧 DEBUG: should_use_anthropic = {}", should_use_anthropic);
+        }
         if should_use_anthropic {
-            println!("🔧 DEBUG: Using call_api_with_llm_client for Anthropic");
+            if self.should_show_debug(1) {
+                println!("🔧 DEBUG: Using call_api_with_llm_client for Anthropic");
+            }
             return self.call_api_with_llm_client(&messages, &current_model).await;
         } else {
-            println!("🔧 DEBUG: Using regular OpenAI-style call_api");
+            if self.should_show_debug(1) {
+                println!("🔧 DEBUG: Using regular OpenAI-style call_api");
+            }
         }
 
         // Retry logic with exponential backoff
@@ -2344,9 +2368,13 @@ impl KimiChat {
 
     /// Call API using the new LlmClient system (for Anthropic and future backends)
     async fn call_api_with_llm_client(&self, messages: &[Message], model: &ModelType) -> Result<(Message, Option<Usage>, ModelType)> {
-        println!("🔧 DEBUG: call_api_with_llm_client called with model: {:?}", model);
-        println!("🔧 DEBUG: client_config.api_url_blu_model: {:?}", self.client_config.api_url_blu_model);
-        println!("🔧 DEBUG: client_config.api_url_grn_model: {:?}", self.client_config.api_url_grn_model);
+        if self.should_show_debug(1) {
+            println!("🔧 DEBUG: call_api_with_llm_client called with model: {:?}", model);
+        }
+        if self.should_show_debug(2) {
+            println!("🔧 DEBUG: client_config.api_url_blu_model: {:?}", self.client_config.api_url_blu_model);
+            println!("🔧 DEBUG: client_config.api_url_grn_model: {:?}", self.client_config.api_url_grn_model);
+        }
 
         // Convert old Message format to new ChatMessage format
         let chat_messages: Vec<ChatMessage> = messages.iter().map(|msg| {
@@ -2383,7 +2411,9 @@ impl KimiChat {
                 if let Some(ref api_url) = self.client_config.api_url_blu_model {
                     if api_url.contains("anthropic") {
                         println!("{} Using Anthropic API for 'blu_model' at: {}", "🧠".cyan(), api_url);
-                        println!("🔧 DEBUG: BluModel Anthropic URL: '{}', API Key present: {}", api_url, self.client_config.api_key_blu_model.is_some());
+                        if self.should_show_debug(2) {
+                            println!("🔧 DEBUG: BluModel Anthropic URL: '{}', API Key present: {}", api_url, self.client_config.api_key_blu_model.is_some());
+                        }
                         std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
                             self.client_config.api_key_blu_model.clone().unwrap_or_default(),
                             model.as_str(),
@@ -2428,7 +2458,9 @@ impl KimiChat {
                     .or_else(|_| env::var("ANTHROPIC_BASE_URL_GRN"))
                     .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
                 println!("{} Using Anthropic API for 'anthropic' at: {}", "🧠".cyan(), api_url);
-                println!("🔧 DEBUG: AnthropicModel URL: '{}'", api_url);
+                if self.should_show_debug(2) {
+                    println!("🔧 DEBUG: AnthropicModel URL: '{}'", api_url);
+                }
                 let api_key = env::var("ANTHROPIC_API_KEY")
                     .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN"))
                     .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_BLU"))
@@ -2445,7 +2477,9 @@ impl KimiChat {
                 if let Some(ref api_url) = self.client_config.api_url_grn_model {
                     if api_url.contains("anthropic") {
                         println!("{} Using Anthropic API for 'grn_model' at: {}", "🧠".cyan(), api_url);
-                        println!("🔧 DEBUG: GrnModel Anthropic URL: '{}', API Key present: {}", api_url, self.client_config.api_key_grn_model.is_some());
+                        if self.should_show_debug(2) {
+                            println!("🔧 DEBUG: GrnModel Anthropic URL: '{}', API Key present: {}", api_url, self.client_config.api_key_grn_model.is_some());
+                        }
                         std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
                             self.client_config.api_key_grn_model.clone().unwrap_or_default(),
                             model.as_str(),
@@ -3137,10 +3171,12 @@ async fn main() -> Result<()> {
     println!("{}", format!("Default model: {} • BluModel uses {}, GrnModel uses {}",
         current_model_display, blu_backend, grn_backend).bright_black());
 
-    // Debug info
-    println!("{}", format!("🔧 DEBUG: blu_model URL: {:?}", chat.client_config.api_url_blu_model).bright_black());
-    println!("{}", format!("🔧 DEBUG: grn_model URL: {:?}", chat.client_config.api_url_grn_model).bright_black());
-    println!("{}", format!("🔧 DEBUG: Current model: {:?}", chat.current_model).bright_black());
+    // Debug info (shown at debug level 1+)
+    if chat.should_show_debug(1) {
+        println!("{}", format!("🔧 DEBUG: blu_model URL: {:?}", chat.client_config.api_url_blu_model).bright_black());
+        println!("{}", format!("🔧 DEBUG: grn_model URL: {:?}", chat.client_config.api_url_grn_model).bright_black());
+        println!("{}", format!("🔧 DEBUG: Current model: {:?}", chat.current_model).bright_black());
+    }
 
     // Initialize logger (async) – logs go into the workspace directory
     chat.logger = match ConversationLogger::new(&chat.work_dir).await {
@@ -3226,6 +3262,32 @@ async fn main() -> Result<()> {
                     match chat.load_state(file_path) {
                         Ok(msg) => println!("{} {}", "📂".bright_green(), msg),
                         Err(e) => eprintln!("{} Failed to load: {}", "❌".bright_red(), e),
+                    }
+                    continue;
+                }
+
+                // Handle /debug command
+                if line == "/debug" {
+                    println!("{} Debug level: {} (binary: {:b})", "🔧".bright_cyan(), chat.get_debug_level(), chat.get_debug_level());
+                    println!("{} Usage: /debug <level>", "💡".bright_yellow());
+                    println!("  0 = off");
+                    println!("  1 = basic (bit 0)");
+                    println!("  2 = detailed (bit 1)");
+                    println!("  4 = verbose (bit 2)");
+                    println!("  Example: /debug 3 (enables basic + detailed)");
+                    continue;
+                }
+
+                if line.starts_with("/debug ") {
+                    let level_str = line[7..].trim();
+                    match level_str.parse::<u32>() {
+                        Ok(level) => {
+                            chat.set_debug_level(level);
+                            println!("{} Debug level set to {} (binary: {:b})", "🔧".bright_green(), level, level);
+                        }
+                        Err(_) => {
+                            eprintln!("{} Invalid debug level: '{}'. Use a number like 0, 1, 3, 7, etc.", "❌".bright_red(), level_str);
+                        }
                     }
                     continue;
                 }
