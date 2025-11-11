@@ -852,14 +852,21 @@ impl KimiChat {
             None
         };
 
+        // Determine initial model based on overrides or defaults
+        // Default to GPT-OSS for cost efficiency - it's significantly cheaper than Kimi
+        // while still providing good performance for most tasks
+        let initial_model = if let Some(ref override_model) = client_config.model_grn_model_override {
+            ModelType::Custom(override_model.clone())
+        } else {
+            ModelType::GrnModel
+        };
+
         let mut chat = Self {
             api_key: client_config.api_key.clone(),
             work_dir,
             client: reqwest::Client::new(),
             messages: Vec::new(),
-            // Default to GPT-OSS for cost efficiency - it's significantly cheaper than Kimi
-            // while still providing good performance for most tasks
-            current_model: ModelType::GrnModel,
+            current_model: initial_model,
             total_tokens_used: 0,
             logger: None,
             tool_registry,
