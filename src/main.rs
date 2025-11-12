@@ -378,10 +378,23 @@ impl ModelType {
     }
 }
 
+use serde::{Deserializer};
+
+fn deserialize_string_or_null<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Null => Ok(String::new()),
+        _ => Ok(String::new()),
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Message {
     role: String,
-    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_string_or_null")]
     content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_calls: Option<Vec<ToolCall>>,
