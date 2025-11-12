@@ -33,6 +33,7 @@ mod tools;
 mod agents;
 mod models;
 mod tools_execution;
+mod cli;
 
 use logging::ConversationLogger;
 use core::{ToolRegistry, ToolParameters};
@@ -40,6 +41,7 @@ use policy::{PolicyManager, ActionType, Decision};
 use core::tool_context::ToolContext;
 use tools::*;
 use tools_execution::parse_xml_tool_calls;
+use cli::{Cli, Commands};
 use agents::{
     PlanningCoordinator, AgentFactory, LlmClient,
     AnthropicLlmClient, GroqLlmClient, LlamaCppClient,
@@ -58,304 +60,6 @@ use models::{
 const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MAX_CONTEXT_TOKENS: usize = 100_000; // Keep conversation under this to avoid rate limits
 const MAX_RETRIES: u32 = 3;
-
-/// CLI arguments for kimi-chat
-#[derive(Parser)]
-#[command(name = "kimichat")]
-#[command(about = "Kimi Chat - Claude Code-like Experience with Multi-Model AI Support")]
-#[command(version = "0.1.0")]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Commands>,
-    
-    /// Run in interactive mode (default)
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    interactive: bool,
-
-    /// Enable multi-agent system for specialized task handling
-    #[arg(long, action = clap::ArgAction::SetTrue)]
-    agents: bool,
-
-    /// Generate shell completions
-    #[arg(long, value_enum)]
-    generate: Option<Shell>,
-    
-    /// Run in summary mode – give a short description of the task.
-    #[arg(long, value_name = "TEXT")]
-    task: Option<String>,
-
-    /// Pretty‑print the JSON output (only useful with --task)
-    #[arg(long)]
-    pretty: bool,
-
-    /// Use llama.cpp server for both models (e.g., http://localhost:8080)
-    /// This is a convenience flag that sets both --api-url-blu-model and --api-url-grn-model
-    #[arg(long, value_name = "URL")]
-    llama_cpp_url: Option<String>,
-
-    /// API URL for the 'blu_model' model (e.g., http://localhost:8080)
-    /// If set, uses llama.cpp for blu_model; otherwise uses Groq
-    #[arg(long, value_name = "URL")]
-    api_url_blu_model: Option<String>,
-
-    /// API URL for the 'grn_model' model (e.g., http://localhost:8081)
-    /// If set, uses llama.cpp for grn_model; otherwise uses Groq
-    #[arg(long, value_name = "URL")]
-    api_url_grn_model: Option<String>,
-
-    /// Override the 'blu_model' model with a custom model name
-    #[arg(long, value_name = "MODEL")]
-    model_blu_model: Option<String>,
-
-    /// Override the 'grn_model' model with a custom model name
-    #[arg(long, value_name = "MODEL")]
-    model_grn_model: Option<String>,
-
-    /// Override both models with the same custom model name
-    /// This is a convenience flag that sets both --model-blu-model and --model-grn-model
-    #[arg(long, value_name = "MODEL")]
-    model: Option<String>,
-
-    /// Auto-confirm all actions without asking (auto-pilot mode)
-    #[arg(long)]
-    auto_confirm: bool,
-
-    /// Path to policy file (default: policies.toml in project root)
-    #[arg(long, value_name = "PATH")]
-    policy_file: Option<String>,
-
-    /// Learn from user decisions and save them to policy file
-    #[arg(long)]
-    learn_policies: bool,
-
-    /// Enable streaming mode - show AI responses as they're generated
-    #[arg(long)]
-    stream: bool,
-
-    /// Enable verbose debug output (shows HTTP requests, responses, headers, etc.)
-    #[arg(long, short = 'v')]
-    verbose: bool,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Read file contents (shows first 10 lines with total count)
-    Read {
-        /// Path to the file to read
-        file_path: String,
-    },
-    /// Write content to a file
-    Write {
-        /// Path to the file to write
-        file_path: String,
-        /// Content to write to the file
-        content: String,
-    },
-    /// Edit a file by replacing old content with new content
-    Edit {
-        /// Path to the file to edit
-        file_path: String,
-        /// Old content to find and replace (must not be empty)
-        #[arg(short = 'o', long)]
-        old_content: String,
-        /// New content to replace with
-        #[arg(short = 'n', long)]
-        new_content: String,
-    },
-    /// List files matching a glob pattern (no recursive ** allowed)
-    List {
-        /// Glob pattern (e.g., 'src/*.rs'). Defaults to '*'
-        #[arg(default_value = "*")]
-        pattern: String,
-    },
-    /// Search for text across files
-    Search {
-        /// Text or pattern to search for
-        query: String,
-        /// File pattern to search in (e.g., 'src/*.rs'). Defaults to '*.rs'
-        #[arg(short = 'p', long, default_value = "*.rs")]
-        pattern: String,
-        /// Treat query as regular expression
-        #[arg(short = 'r', long)]
-        regex: bool,
-        /// Case-insensitive search
-        #[arg(short = 'i', long)]
-        case_insensitive: bool,
-        /// Maximum number of results to return
-        #[arg(short = 'm', long, default_value = "100")]
-        max_results: u32,
-    },
-    /// Switch to a different AI model
-    Switch {
-        /// Model to switch to ('kimi' or 'gpt-oss')
-        model: String,
-        /// Reason for switching
-        reason: String,
-    },
-    /// Run a shell command
-    Run {
-        /// Command to execute
-        command: String,
-    },
-    /// Open and display file contents with optional line range
-    Open {
-        /// Path to the file to open
-        file_path: String,
-        /// Starting line number (1-based)
-        #[arg(short = 's', long)]
-        start_line: Option<usize>,
-        /// Ending line number (1-based)
-        #[arg(short = 'e', long)]
-        end_line: Option<usize>,
-    },
-}
-
-impl Commands {
-    fn execute(&self) -> Pin<Box<dyn Future<Output = Result<String>> + '_>> {
-        use crate::core::tool::{Tool, ToolParameters};
-        use crate::core::tool_context::ToolContext;
-        use crate::tools::file_ops::*;
-        use crate::tools::system::*;
-        use crate::tools::search::*;
-
-        match self {
-            Commands::Read { file_path } => {
-                let work_dir = env::current_dir().unwrap();
-                let file_path = file_path.clone();
-                Box::pin(async move {
-                    let mut params = ToolParameters::new();
-                    params.set("file_path", file_path);
-                    let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    let result = ReadFileTool.execute(params, &context).await;
-                    if result.success {
-                        Ok(result.content)
-                    } else {
-                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
-                    }
-                })
-            }
-            Commands::Write { file_path, content } => {
-                let work_dir = env::current_dir().unwrap();
-                let file_path = file_path.clone();
-                let content = content.clone();
-                Box::pin(async move {
-                    let mut params = ToolParameters::new();
-                    params.set("file_path", file_path);
-                    params.set("content", content);
-                    let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    let result = WriteFileTool.execute(params, &context).await;
-                    if result.success {
-                        Ok(result.content)
-                    } else {
-                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
-                    }
-                })
-            }
-            Commands::Edit { file_path, old_content, new_content } => {
-                let work_dir = env::current_dir().unwrap();
-                let file_path = file_path.clone();
-                let old_content = old_content.clone();
-                let new_content = new_content.clone();
-                Box::pin(async move {
-                    let mut params = ToolParameters::new();
-                    params.set("file_path", file_path);
-                    params.set("old_content", old_content);
-                    params.set("new_content", new_content);
-                    let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    let result = EditFileTool.execute(params, &context).await;
-                    if result.success {
-                        Ok(result.content)
-                    } else {
-                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
-                    }
-                })
-            }
-            Commands::List { pattern } => {
-                let work_dir = env::current_dir().unwrap();
-                let pattern = pattern.clone();
-                Box::pin(async move {
-                    let mut params = ToolParameters::new();
-                    params.set("pattern", pattern);
-                    let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    let result = ListFilesTool.execute(params, &context).await;
-                    if result.success {
-                        Ok(result.content)
-                    } else {
-                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
-                    }
-                })
-            }
-            Commands::Search { query, pattern, regex, case_insensitive, max_results } => {
-                let work_dir = env::current_dir().unwrap();
-                let query = query.clone();
-                let pattern = pattern.clone();
-                let regex = *regex;
-                let case_insensitive = *case_insensitive;
-                let max_results = *max_results;
-                Box::pin(async move {
-                    let mut params = ToolParameters::new();
-                    params.set("query", query);
-                    params.set("pattern", pattern);
-                    params.set("regex", regex);
-                    params.set("case_insensitive", case_insensitive);
-                    params.set("max_results", max_results as i64);
-                    let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    let result = SearchFilesTool.execute(params, &context).await;
-                    if result.success {
-                        Ok(result.content)
-                    } else {
-                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
-                    }
-                })
-            }
-            Commands::Switch { model, reason } => {
-                let work_dir = env::current_dir().unwrap();
-                let mut chat = KimiChat::new("".to_string(), work_dir);
-                Box::pin(async move {
-                    chat.switch_model(model, reason)
-                })
-            }
-            Commands::Run { command } => {
-                let work_dir = env::current_dir().unwrap();
-                let command = command.clone();
-                Box::pin(async move {
-                    let mut params = ToolParameters::new();
-                    params.set("command", command);
-                    let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    let result = RunCommandTool.execute(params, &context).await;
-                    if result.success {
-                        Ok(result.content)
-                    } else {
-                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
-                    }
-                })
-            }
-            Commands::Open { file_path, start_line, end_line } => {
-                let work_dir = env::current_dir().unwrap();
-                let file_path = file_path.clone();
-                let start_line = *start_line;
-                let end_line = *end_line;
-                Box::pin(async move {
-                    let mut params = ToolParameters::new();
-                    params.set("file_path", file_path);
-                    if let Some(start) = start_line {
-                        params.set("start_line", start as i64);
-                    }
-                    if let Some(end) = end_line {
-                        params.set("end_line", end as i64);
-                    }
-                    let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    let result = OpenFileTool.execute(params, &context).await;
-                    if result.success {
-                        Ok(result.content)
-                    } else {
-                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
-                    }
-                })
-            }
-        }
-    }
-}
 
 /// Configuration for KimiChat client
 #[derive(Debug, Clone)]
@@ -2921,7 +2625,14 @@ async fn main() -> Result<()> {
 
     // If a subcommand was provided, execute it and exit
     if let Some(command) = cli.command {
-        let result = command.execute().await?;
+        // Special handling for Switch command which needs KimiChat
+        let result = match &command {
+            Commands::Switch { model, reason } => {
+                let mut chat = KimiChat::new("".to_string(), work_dir.clone());
+                chat.switch_model(model, reason)?
+            }
+            _ => command.execute().await?
+        };
         println!("{}", result);
         return Ok(());
     }
