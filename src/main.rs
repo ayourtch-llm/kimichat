@@ -1,27 +1,14 @@
 use anyhow::{Context, Result};
-use std::path::Path;
 use colored::Colorize;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::time::sleep;
-use std::ops::RangeInclusive;
-use std::io::BufReader;
-use std::fs::File;
-use std::io::prelude::*;
-use std::io::Write;
-use similar::{ChangeTag, TextDiff};
-use regex::Regex;
 
-use clap::{Parser, Subcommand};
-use clap_complete::Shell;
-use std::future::Future;
-use std::pin::Pin;
-use crate::preview::two_word_preview;
+use clap::Parser;
 
 
 mod logging;
@@ -39,25 +26,22 @@ mod chat;
 
 use logging::{ConversationLogger, log_request, log_request_to_file, log_response, log_stream_chunk};
 use core::{ToolRegistry, ToolParameters};
-use policy::{PolicyManager, ActionType, Decision};
 use core::tool_context::ToolContext;
-use tools::*;
+use policy::PolicyManager;
 use tools_execution::parse_xml_tool_calls;
 use cli::{Cli, Commands};
 use config::{ClientConfig, GROQ_API_URL, normalize_api_url, initialize_tool_registry, initialize_agent_system};
-use chat::{ChatState, save_state, load_state};
+use chat::{save_state, load_state};
 use agents::{
-    PlanningCoordinator, AgentFactory, LlmClient,
-    AnthropicLlmClient, GroqLlmClient, LlamaCppClient,
+    PlanningCoordinator, GroqLlmClient,
     ChatMessage, ToolDefinition, ExecutionContext,
 };
 use models::{
     ModelType, Message, ToolCall, FunctionCall,
-    ReadFileArgs, WriteFileArgs, ListFilesArgs, EditFileArgs,
-    SwitchModelArgs, RunCommandArgs, SearchFilesArgs, OpenFileArgs,
+    SwitchModelArgs,
     ChatRequest, Tool, FunctionDef,
-    ChatResponse, Choice, Usage,
-    StreamChunk, StreamChoice, StreamDelta, StreamToolCallDelta, StreamFunctionDelta,
+    ChatResponse, Usage,
+    StreamChunk,
 };
 
 
