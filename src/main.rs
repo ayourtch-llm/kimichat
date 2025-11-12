@@ -31,12 +31,26 @@ mod core;
 mod policy;
 mod tools;
 mod agents;
+mod models;
+
 use logging::ConversationLogger;
 use core::{ToolRegistry, ToolParameters};
 use policy::{PolicyManager, ActionType, Decision};
 use core::tool_context::ToolContext;
 use tools::*;
-use agents::*;
+use agents::{
+    PlanningCoordinator, AgentFactory, LlmClient,
+    AnthropicLlmClient, GroqLlmClient, LlamaCppClient,
+    ChatMessage, ToolDefinition, ExecutionContext,
+};
+use models::{
+    ModelType, Message, ToolCall, FunctionCall,
+    ReadFileArgs, WriteFileArgs, ListFilesArgs, EditFileArgs,
+    SwitchModelArgs, RunCommandArgs, SearchFilesArgs, OpenFileArgs,
+    ChatRequest, Tool, FunctionDef,
+    ChatResponse, Choice, Usage,
+    StreamChunk, StreamChoice, StreamDelta, StreamToolCallDelta, StreamFunctionDelta,
+};
 
 
 const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
@@ -340,261 +354,6 @@ impl Commands {
         }
     }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-enum ModelType {
-    BluModel,
-    GrnModel,
-    AnthropicModel,
-    Custom(String),
-}
-
-impl ModelType {
-    fn as_str(&self) -> String {
-        match self {
-            ModelType::BluModel => "moonshotai/kimi-k2-instruct-0905".to_string(),
-            ModelType::GrnModel => "openai/gpt-oss-120b".to_string(),
-            ModelType::AnthropicModel => "claude-3-5-sonnet-20241022".to_string(),
-            ModelType::Custom(name) => name.clone(),
-        }
-    }
-
-    fn display_name(&self) -> String {
-        match self {
-            ModelType::BluModel => "Kimi-K2-Instruct-0905".to_string(),
-            ModelType::GrnModel => "GPT-OSS-120B".to_string(),
-            ModelType::AnthropicModel => "Claude-3.5-Sonnet".to_string(),
-            ModelType::Custom(name) => name.clone(),
-        }
-    }
-
-    fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "blu_model" | "blu-model" | "blumodel" => ModelType::BluModel,
-            "grn_model" | "grn-model" | "grnmodel" => ModelType::GrnModel,
-            "anthropic" | "claude" | "anthropic_model" | "anthropic-model" => ModelType::AnthropicModel,
-            _ => ModelType::Custom(s.to_string()),
-        }
-    }
-}
-
-use serde::{Deserializer};
-
-fn deserialize_string_or_null<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    match serde_json::Value::deserialize(deserializer)? {
-        serde_json::Value::String(s) => Ok(s),
-        serde_json::Value::Null => Ok(String::new()),
-        _ => Ok(String::new()),
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Message {
-    role: String,
-    #[serde(deserialize_with = "deserialize_string_or_null")]
-    content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_call_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct ToolCall {
-    id: String,
-    #[serde(rename = "type")]
-    tool_type: String,
-    function: FunctionCall,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct FunctionCall {
-    name: String,
-    arguments: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Tool {
-    #[serde(rename = "type")]
-    tool_type: String,
-    function: FunctionDef,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct FunctionDef {
-    name: String,
-    description: String,
-    parameters: serde_json::Value,
-}
-
-#[derive(Debug, Serialize)]
-struct ChatRequest {
-    model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stream: Option<bool>,
-    tool_choice: String,
-    tools: Vec<Tool>,
-    messages: Vec<Message>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Usage {
-    prompt_tokens: usize,
-    completion_tokens: usize,
-    total_tokens: usize,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChatResponse {
-    choices: Vec<Choice>,
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    object: Option<String>,
-    #[serde(default)]
-    created: Option<i64>,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    usage: Option<Usage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Choice {
-    message: Message,
-    #[serde(default)]
-    index: Option<i32>,
-    #[serde(default)]
-    finish_reason: Option<String>,
-    #[serde(default)]
-    logprobs: Option<serde_json::Value>,
-}
-
-// Structures for streaming responses
-#[derive(Debug, Deserialize)]
-struct StreamChunk {
-    choices: Vec<StreamChoice>,
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    object: Option<String>,
-    #[serde(default)]
-    created: Option<i64>,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    usage: Option<Usage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamChoice {
-    delta: StreamDelta,
-    #[serde(default)]
-    index: Option<i32>,
-    #[serde(default)]
-    finish_reason: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamDelta {
-    #[serde(default)]
-    role: Option<String>,
-    #[serde(default)]
-    content: Option<String>,
-    #[serde(default)]
-    reasoning_content: Option<String>,
-    #[serde(default)]
-    tool_calls: Option<Vec<StreamToolCallDelta>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct StreamToolCallDelta {
-    index: usize,
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(rename = "type", default)]
-    tool_type: Option<String>,
-    #[serde(default)]
-    function: Option<StreamFunctionDelta>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct StreamFunctionDelta {
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    arguments: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ReadFileArgs {
-    file_path: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct WriteFileArgs {
-    file_path: String,
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ListFilesArgs {
-    #[serde(default = "default_pattern")]
-    pattern: String,
-}
-
-fn default_pattern() -> String {
-    "*".to_string()
-}
-
-#[derive(Debug, Deserialize)]
-struct EditFileArgs {
-    file_path: String,
-    old_content: String,
-    new_content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct SwitchModelArgs {
-    model: String,
-    reason: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct RunCommandArgs {
-    command: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct SearchFilesArgs {
-    #[serde(default)]
-    query: String,
-    #[serde(default = "default_pattern")]
-    pattern: String,
-    #[serde(default)]
-    regex: bool,
-    #[serde(default)]
-    case_insensitive: bool,
-    #[serde(default)]
-    max_results: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenFileArgs {
-    file_path: String,
-    #[serde(default)]
-    start_line: usize,
-    #[serde(default)]
-    end_line: usize,
-}
-
-fn default_max_results() -> u32 { 100 }
-
 
 /// Configuration for KimiChat client
 #[derive(Debug, Clone)]
