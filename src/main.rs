@@ -2549,6 +2549,213 @@ impl KimiChat {
         Ok((message, usage, model.clone()))
     }
 
+    /// Streaming API call using the new LlmClient system
+    async fn call_api_streaming_with_llm_client(&self, messages: &[Message], model: &ModelType) -> Result<(Message, Option<Usage>, ModelType)> {
+        if self.should_show_debug(1) {
+            println!("🔧 DEBUG: call_api_streaming_with_llm_client called with model: {:?}", model);
+        }
+
+        // Convert old Message format to new ChatMessage format
+        let chat_messages: Vec<ChatMessage> = messages.iter().map(|msg| {
+            ChatMessage {
+                role: msg.role.clone(),
+                content: msg.content.clone(),
+                tool_calls: msg.tool_calls.clone().map(|calls| {
+                    calls.into_iter().map(|call| crate::agents::agent::ToolCall {
+                        id: call.id,
+                        function: crate::agents::agent::FunctionCall {
+                            name: call.function.name,
+                            arguments: call.function.arguments,
+                        },
+                    }).collect()
+                }),
+                tool_call_id: msg.tool_call_id.clone(),
+                name: msg.name.clone(),
+            }
+        }).collect();
+
+        // Convert tools to the new format
+        let tools: Vec<ToolDefinition> = self.get_tools().into_iter().map(|tool| {
+            ToolDefinition {
+                name: tool.function.name,
+                description: tool.function.description,
+                parameters: tool.function.parameters,
+            }
+        }).collect();
+
+        // Create the appropriate LlmClient using the same logic as call_api_with_llm_client
+        let llm_client: std::sync::Arc<dyn crate::agents::agent::LlmClient> =
+            if matches!(model, ModelType::BluModel) {
+                // Blu model logic (same as agent mode)
+                if let Some(ref api_url) = self.client_config.api_url_blu_model {
+                    if api_url.contains("anthropic") {
+                        println!("{} Using Anthropic streaming API for 'blu_model' at: {}", "🧠".cyan(), api_url);
+                        std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                            self.client_config.api_key_blu_model.clone().unwrap_or_default(),
+                            model.as_str(),
+                            api_url.clone(),
+                            "blu_model".to_string()
+                        ))
+                    } else {
+                        println!("{} Using llama.cpp for 'blu_model' at: {}", "🦙".cyan(), api_url);
+                        std::sync::Arc::new(crate::agents::llama_cpp_client::LlamaCppClient::new(
+                            api_url.clone(),
+                            model.as_str()
+                        ))
+                    }
+                } else if env::var("ANTHROPIC_AUTH_TOKEN_BLU").is_ok() ||
+                          (env::var("ANTHROPIC_AUTH_TOKEN").is_ok() &&
+                           (self.client_config.model_blu_model_override.as_ref()
+                            .map(|m| m.contains("claude") || m.contains("anthropic"))
+                            .unwrap_or(false))) {
+                    println!("{} Using Anthropic streaming API for 'blu_model'", "🧠".cyan());
+                    let anthropic_key = env::var("ANTHROPIC_AUTH_TOKEN_BLU")
+                        .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN"))
+                        .unwrap_or_default();
+                    std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                        anthropic_key,
+                        model.as_str(),
+                        "https://api.anthropic.com".to_string(),
+                        "blu_model".to_string()
+                    ))
+                } else {
+                    println!("{} Using Groq API for 'blu_model'", "🚀".cyan());
+                    std::sync::Arc::new(crate::agents::groq_client::GroqLlmClient::new(
+                        self.client_config.api_key.clone(),
+                        model.as_str(),
+                        crate::GROQ_API_URL.to_string(),
+                        "blu_model".to_string()
+                    ))
+                }
+            } else if matches!(model, ModelType::AnthropicModel) {
+                // Anthropic model logic - use raw URL
+                let api_url = env::var("ANTHROPIC_BASE_URL")
+                    .or_else(|_| env::var("ANTHROPIC_BASE_URL_BLU"))
+                    .or_else(|_| env::var("ANTHROPIC_BASE_URL_GRN"))
+                    .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
+                println!("{} Using Anthropic streaming API for 'anthropic' at: {}", "🧠".cyan(), api_url);
+                let api_key = env::var("ANTHROPIC_API_KEY")
+                    .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN"))
+                    .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_BLU"))
+                    .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_GRN"))
+                    .unwrap_or_else(|_| self.client_config.api_key.clone());
+                std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                    api_key,
+                    model.as_str(),
+                    api_url,
+                    "anthropic".to_string()
+                ))
+            } else {
+                // Grn model logic (same as agent mode)
+                if let Some(ref api_url) = self.client_config.api_url_grn_model {
+                    if api_url.contains("anthropic") {
+                        println!("{} Using Anthropic streaming API for 'grn_model' at: {}", "🧠".cyan(), api_url);
+                        std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                            self.client_config.api_key_grn_model.clone().unwrap_or_default(),
+                            model.as_str(),
+                            api_url.clone(),
+                            "grn_model".to_string()
+                        ))
+                    } else {
+                        println!("{} Using llama.cpp for 'grn_model' at: {}", "🦙".cyan(), api_url);
+                        std::sync::Arc::new(crate::agents::llama_cpp_client::LlamaCppClient::new(
+                            api_url.clone(),
+                            model.as_str()
+                        ))
+                    }
+                } else if env::var("ANTHROPIC_AUTH_TOKEN_GRN").is_ok() ||
+                          (env::var("ANTHROPIC_AUTH_TOKEN").is_ok() &&
+                           (self.client_config.model_grn_model_override.as_ref()
+                            .map(|m| m.contains("claude") || m.contains("anthropic"))
+                            .unwrap_or(false))) {
+                    println!("{} Using Anthropic streaming API for 'grn_model'", "🧠".cyan());
+                    let anthropic_key = env::var("ANTHROPIC_AUTH_TOKEN_GRN")
+                        .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN"))
+                        .unwrap_or_default();
+                    std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                        anthropic_key,
+                        model.as_str(),
+                        "https://api.anthropic.com".to_string(),
+                        "grn_model".to_string()
+                    ))
+                } else {
+                    println!("{} Using Groq API for 'grn_model'", "🚀".cyan());
+                    std::sync::Arc::new(crate::agents::groq_client::GroqLlmClient::new(
+                        self.client_config.api_key.clone(),
+                        model.as_str(),
+                        crate::GROQ_API_URL.to_string(),
+                        "grn_model".to_string()
+                    ))
+                }
+            };
+
+        println!("\n{}", "📡 Starting Anthropic streaming response...".bright_cyan());
+
+        // Initialize response accumulation
+        let mut accumulated_content = String::new();
+
+        // Get the streaming response
+        let mut stream = llm_client.chat_streaming(chat_messages.clone(), tools.clone()).await?;
+
+        // Process the stream
+        use futures::StreamExt;
+        while let Some(chunk_result) = stream.next().await {
+            match chunk_result {
+                Ok(chunk) => {
+                    // Print the delta in real-time (like the old streaming system)
+                    if !chunk.delta.is_empty() {
+                        print!("{}", chunk.delta);
+                        std::io::stdout().flush().unwrap();
+                        accumulated_content.push_str(&chunk.delta);
+                    }
+
+                    // Check if we're done
+                    if let Some(ref reason) = chunk.finish_reason {
+                        if reason == "stop" {
+                            break;
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("{} Streaming error: {}", "❌".red(), e);
+                    break;
+                }
+            }
+        }
+
+        println!(); // New line after streaming complete
+
+        // For now, we'll make a non-streaming call to get the complete response with tool calls
+        // This is a limitation of the current format translation approach
+        let response = llm_client.chat(chat_messages, tools).await?;
+
+        // Convert the response back to the old format
+        let message = Message {
+            role: response.message.role,
+            content: response.message.content,
+            tool_calls: response.message.tool_calls.map(|calls| {
+                calls.into_iter().map(|call| crate::ToolCall {
+                    id: call.id,
+                    tool_type: "function".to_string(),
+                    function: crate::FunctionCall {
+                        name: call.function.name,
+                        arguments: call.function.arguments,
+                    },
+                }).collect()
+            }),
+            tool_call_id: response.message.tool_call_id,
+            name: response.message.name,
+        };
+
+        let usage = response.usage.map(|u| Usage {
+            prompt_tokens: u.prompt_tokens as usize,
+            completion_tokens: u.completion_tokens as usize,
+            total_tokens: u.total_tokens as usize,
+        });
+
+        Ok((message, usage, model.clone()))
+    }
+
     async fn chat(&mut self, user_message: &str) -> Result<String> {
         self.messages.push(Message {
             role: "user".to_string(),
@@ -2598,7 +2805,28 @@ impl KimiChat {
             }
 
             let (response, usage, current_model) = if self.stream_responses {
-                self.call_api_streaming(&self.messages).await?
+                // Check if this is an Anthropic model that should use the new system
+                let is_custom_claude = if let ModelType::Custom(ref name) = self.current_model {
+                    name.contains("claude")
+                } else {
+                    false
+                };
+
+                let should_use_anthropic = matches!(self.current_model, ModelType::AnthropicModel) ||
+                    is_custom_claude ||
+                    (self.client_config.api_url_blu_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
+                    (self.client_config.api_url_grn_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false));
+
+                if should_use_anthropic {
+                    // Use the new streaming implementation for Anthropic
+                    if self.should_show_debug(1) {
+                        println!("🔧 DEBUG: Using Anthropic streaming with format translation");
+                    }
+                    self.call_api_streaming_with_llm_client(&self.messages, &self.current_model).await?
+                } else {
+                    // Use old streaming for OpenAI-compatible APIs
+                    self.call_api_streaming(&self.messages).await?
+                }
             } else {
                 self.call_api(&self.messages).await?
             };

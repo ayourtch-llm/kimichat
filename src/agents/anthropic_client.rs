@@ -1,9 +1,12 @@
-use crate::agents::agent::{LlmClient, LlmResponse, ChatMessage, ToolDefinition};
+use crate::agents::agent::{LlmClient, LlmResponse, ChatMessage, ToolDefinition, StreamingChunk};
 use anyhow::{Result, Context};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
+use futures::stream::{self, Stream, StreamExt};
+use futures_util::stream::unfold;
+use std::pin::Pin;
 
 /// Anthropic LLM client implementation using native Anthropic API
 pub struct AnthropicLlmClient {
@@ -209,6 +212,166 @@ impl LlmClient for AnthropicLlmClient {
             message,
             usage,
         })
+    }
+
+    async fn chat_streaming(&self, messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Result<Box<dyn Stream<Item = Result<StreamingChunk>> + Send + Unpin>> {
+        // Extract system messages and combine them
+        let system_messages: Vec<String> = messages.iter()
+            .filter(|msg| msg.role == "system")
+            .map(|msg| msg.content.clone())
+            .collect();
+
+        let combined_system = if system_messages.is_empty() {
+            None
+        } else {
+            Some(system_messages.join("\n\n"))
+        };
+
+        let anthropic_messages = self.convert_messages_to_anthropic_format(messages);
+        let anthropic_tools = self.convert_tools_to_anthropic_format(tools);
+
+        let mut request = serde_json::json!({
+            "model": self.model,
+            "messages": anthropic_messages,
+            "max_tokens": 4096,
+            "tools": anthropic_tools,
+            "tool_choice": {"type": "auto"},
+            "stream": true
+        });
+
+        // Add system message if present
+        if let Some(system_content) = combined_system {
+            request["system"] = serde_json::Value::String(system_content);
+        }
+
+        // Log request to file for persistent debugging
+        let _ = self.log_request_to_file(&self.get_messages_url(), &request);
+
+        let response = self.client
+            .post(&self.get_messages_url())
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(anyhow::anyhow!("Anthropic API streaming error: {}", error_text));
+        }
+
+        let byte_stream = response.bytes_stream();
+        let agent_name = self.agent_name.clone();
+
+        let stream = unfold((byte_stream, String::new(), false, agent_name), |(mut byte_stream, mut buffer, mut done, agent_name)| async move {
+            if done {
+                return None;
+            }
+
+            // Read from the stream until we get a complete SSE event
+            while let Some(chunk_result) = byte_stream.next().await {
+                match chunk_result {
+                    Ok(chunk) => {
+                        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+                        // Process all complete SSE events in the buffer
+                        while let Some(event_end) = buffer.find("\n\n") {
+                            let event = buffer[..event_end].to_string();
+                            buffer = buffer[event_end + 2..].to_string();
+
+                            // Parse SSE event
+                            if let Some(data_start) = event.find("data: ") {
+                                let data = &event[data_start + 6..];
+
+                                if data.trim() == "[DONE]" {
+                                    // Stream finished
+                                    done = true;
+                                    return Some((Ok(StreamingChunk {
+                                        content: String::new(),
+                                        delta: String::new(),
+                                        finish_reason: Some("stop".to_string()),
+                                    }), (byte_stream, buffer, done, agent_name)));
+                                }
+
+                                // Parse JSON data
+                                if let Ok(json) = serde_json::from_str::<Value>(data) {
+                                    if let Some(content_type) = json["type"].as_str() {
+                                        match content_type {
+                                            "content_block_start" => {
+                                                if let Some(content_block) = json["content_block"].as_object() {
+                                                    if let Some(text) = content_block["text"].as_str() {
+                                                        return Some((Ok(StreamingChunk {
+                                                            content: text.to_string(),
+                                                            delta: text.to_string(),
+                                                            finish_reason: None,
+                                                        }), (byte_stream, buffer, done, agent_name)));
+                                                    }
+                                                }
+                                            }
+                                            "content_block_delta" => {
+                                                if let Some(delta) = json["delta"].as_object() {
+                                                    if let Some(text) = delta["text"].as_str() {
+                                                        return Some((Ok(StreamingChunk {
+                                                            content: String::new(), // No accumulated content in streaming mode
+                                                            delta: text.to_string(),
+                                                            finish_reason: None,
+                                                        }), (byte_stream, buffer, done, agent_name)));
+                                                    }
+                                                }
+                                            }
+                                            "content_block_stop" => {
+                                                // Content block finished
+                                                return Some((Ok(StreamingChunk {
+                                                    content: String::new(),
+                                                    delta: String::new(),
+                                                    finish_reason: None, // Don't finish yet, wait for message_stop
+                                                }), (byte_stream, buffer, done, agent_name)));
+                                            }
+                                            "message_stop" => {
+                                                // Message completely finished
+                                                done = true;
+                                                return Some((Ok(StreamingChunk {
+                                                    content: String::new(),
+                                                    delta: String::new(),
+                                                    finish_reason: Some("stop".to_string()),
+                                                }), (byte_stream, buffer, done, agent_name)));
+                                            }
+                                            "error" => {
+                                                if let Some(error) = json["error"].as_object() {
+                                                    let error_msg = error["message"].as_str().unwrap_or("Unknown error");
+                                                    return Some((Err(anyhow::anyhow!("Anthropic streaming error: {}", error_msg)), (byte_stream, buffer, done, agent_name)));
+                                                }
+                                            }
+                                            _ => {
+                                                // Other event types (ping, etc.) - ignore
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        return Some((Err(anyhow::anyhow!("Stream error: {}", e)), (byte_stream, buffer, done, agent_name)));
+                    }
+                }
+            }
+
+            // Stream ended without explicit [DONE]
+            if !done {
+                done = true;
+                return Some((Ok(StreamingChunk {
+                    content: String::new(),
+                    delta: String::new(),
+                    finish_reason: Some("stop".to_string()),
+                }), (byte_stream, buffer, done, agent_name)));
+            }
+
+            None
+        });
+
+        Ok(Box::new(Box::pin(stream)))
     }
 
     async fn chat_completion(&self, messages: &[ChatMessage]) -> Result<String> {

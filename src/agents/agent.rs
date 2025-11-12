@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use async_trait::async_trait;
+use futures::Stream;
 
 /// Agent capabilities
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -154,6 +155,14 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
+/// Streaming chunk for LLM responses
+#[derive(Debug, Clone)]
+pub struct StreamingChunk {
+    pub content: String,
+    pub delta: String,
+    pub finish_reason: Option<String>,
+}
+
 /// LLM client trait
 #[async_trait]
 pub trait LlmClient: Send + Sync {
@@ -161,6 +170,12 @@ pub trait LlmClient: Send + Sync {
 
     /// Simple chat completion without tools (for progress evaluation)
     async fn chat_completion(&self, messages: &[ChatMessage]) -> Result<String>;
+
+    /// Streaming chat completion - returns a stream of chunks
+    async fn chat_streaming(&self, messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Result<Box<dyn Stream<Item = Result<StreamingChunk>> + Send + Unpin>> {
+        // Default implementation falls back to non-streaming
+        Err(anyhow::anyhow!("Streaming not implemented for this client"))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
