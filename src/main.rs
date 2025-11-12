@@ -35,6 +35,7 @@ mod models;
 mod tools_execution;
 mod cli;
 mod config;
+mod chat;
 
 use logging::{ConversationLogger, log_request, log_request_to_file, log_response, log_stream_chunk};
 use core::{ToolRegistry, ToolParameters};
@@ -44,6 +45,7 @@ use tools::*;
 use tools_execution::parse_xml_tool_calls;
 use cli::{Cli, Commands};
 use config::{ClientConfig, GROQ_API_URL, normalize_api_url, initialize_tool_registry, initialize_agent_system};
+use chat::{ChatState, save_state, load_state};
 use agents::{
     PlanningCoordinator, AgentFactory, LlmClient,
     AnthropicLlmClient, GroqLlmClient, LlamaCppClient,
@@ -61,15 +63,6 @@ use models::{
 
 const MAX_CONTEXT_TOKENS: usize = 100_000; // Keep conversation under this to avoid rate limits
 const MAX_RETRIES: u32 = 3;
-
-/// Serializable state for saving/loading conversations
-#[derive(Debug, Serialize, Deserialize)]
-struct ChatState {
-    messages: Vec<Message>,
-    current_model: ModelType,
-    total_tokens_used: usize,
-    version: String,
-}
 
 struct KimiChat {
     api_key: String,
@@ -424,45 +417,23 @@ impl KimiChat {
     }
 
     fn save_state(&self, file_path: &str) -> Result<String> {
-        let state = ChatState {
-            messages: self.messages.clone(),
-            current_model: self.current_model.clone(),
-            total_tokens_used: self.total_tokens_used,
-            version: env!("CARGO_PKG_VERSION").to_string(),
-        };
-
-        let json = serde_json::to_string_pretty(&state)
-            .context("Failed to serialize chat state")?;
-
-        fs::write(file_path, json)
-            .with_context(|| format!("Failed to write state to file: {}", file_path))?;
-
-        Ok(format!(
-            "Saved conversation state to {} ({} messages, {} total tokens)",
-            file_path,
-            self.messages.len(),
-            self.total_tokens_used
-        ))
+        save_state(&self.messages, &self.current_model, self.total_tokens_used, file_path)
     }
 
     fn load_state(&mut self, file_path: &str) -> Result<String> {
-        let json = fs::read_to_string(file_path)
-            .with_context(|| format!("Failed to read state from file: {}", file_path))?;
-
-        let state: ChatState = serde_json::from_str(&json)
-            .context("Failed to deserialize chat state")?;
+        let (messages, current_model, total_tokens_used, version) = load_state(file_path)?;
 
         // Restore state
-        self.messages = state.messages;
-        self.current_model = state.current_model;
-        self.total_tokens_used = state.total_tokens_used;
+        self.messages = messages;
+        self.current_model = current_model;
+        self.total_tokens_used = total_tokens_used;
 
         Ok(format!(
             "Loaded conversation state from {} ({} messages, {} total tokens, version: {})",
             file_path,
             self.messages.len(),
             self.total_tokens_used,
-            state.version
+            version
         ))
     }
 
