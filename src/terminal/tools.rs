@@ -76,13 +76,13 @@ impl Tool for PtySendKeysTool {
     }
 
     fn description(&self) -> &str {
-        "Send keystrokes to a PTY terminal session. Supports special keys like ^C (Ctrl+C), [UP], [DOWN], [F1], etc."
+        "Send keystrokes to a PTY terminal session. IMPORTANT: To execute a command, you MUST end it with \\n (newline) - this is equivalent to pressing Enter. Without \\n, the text just appears on screen but doesn't execute. Examples: 'ls\\n' to run ls, 'cd /tmp\\n' to change directory. Also supports special keys: ^C (Ctrl+C to interrupt), ^D (Ctrl+D for EOF), [UP]/[DOWN] (arrow keys), [TAB] (tab completion), etc."
     }
 
     fn parameters(&self) -> HashMap<String, ParameterDefinition> {
         HashMap::from([
             param!("session_id", "integer", "Session ID to send keys to", required),
-            param!("keys", "string", "Keys to send to the terminal", required),
+            param!("keys", "string", "Keys to send to the terminal. MUST end with \\n to execute commands (press Enter). Example: 'echo hello\\n'", required),
             param!("special", "boolean", "Process special key sequences (default: true)", optional),
         ])
     }
