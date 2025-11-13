@@ -1,5 +1,6 @@
 use crate::{param, core::tool::{Tool, ToolParameters, ToolResult, ParameterDefinition}};
 use crate::core::tool_context::ToolContext;
+use crate::tools::helpers::build_glob_pattern;
 use crate::open_file;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -301,14 +302,7 @@ impl Tool for ListFilesTool {
             .unwrap_or(Some("*".to_string()))
             .unwrap_or_else(|| "*".to_string());
 
-        // Build glob pattern - if pattern is absolute, use as-is; otherwise join with work_dir
-        let glob_pattern = if std::path::Path::new(&pattern).is_absolute() {
-            pattern.clone()
-        } else {
-            context.work_dir.join(&pattern)
-                .to_string_lossy()
-                .to_string()
-        };
+        let glob_pattern = build_glob_pattern(&pattern, &context.work_dir);
 
         eprintln!("[DEBUG] list_files with pattern: '{}' in work_dir: {:?}", glob_pattern, context.work_dir);
 

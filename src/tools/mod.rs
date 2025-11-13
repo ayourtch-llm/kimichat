@@ -9,6 +9,7 @@ pub mod system;
 pub mod model_management;
 pub mod iteration_control;
 pub mod project_tools;
+pub mod helpers;
 
 pub use file_ops::*;
 pub use search::*;
