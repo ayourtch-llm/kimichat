@@ -23,7 +23,7 @@ pub(crate) async fn chat(chat: &mut KimiChat, user_message: &str) -> Result<Stri
         let mut recent_tool_calls: Vec<String> = Vec::new(); // Track recent tool calls
         const MAX_TOOL_ITERATIONS: usize = 100; // Increased limit with intelligent evaluation
         const LOOP_DETECTION_WINDOW: usize = 6; // Check last 6 tool calls
-        const PROGRESS_EVAL_INTERVAL: u32 = 15; // Evaluate progress every 15 tool calls
+        const PROGRESS_EVAL_INTERVAL: u32 = 50; // Evaluate progress every 50 tool calls
 
         // Initialize progress evaluator for all operations
         let blu_model_url = crate::config::get_api_url(&chat.client_config, &ModelType::BluModel);
@@ -223,6 +223,9 @@ pub(crate) async fn chat(chat: &mut KimiChat, user_message: &str) -> Result<Stri
                                         tool_call_id: None,
                                         name: None,
                                     });
+                                } else {
+                                    // should_continue is true and no strategy change needed
+                                    println!("{}", "✅ Progress evaluation: continuing execution with current approach".bright_green());
                                 }
                             }
                             Err(e) => {
