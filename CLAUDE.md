@@ -2,17 +2,39 @@
 
 ## Project Overview
 
-KimiChat is a Rust CLI application providing a Claude Code-like experience with multi-agent AI orchestration. It supports multiple LLM backends (Groq, Anthropic, llama.cpp) and features a sophisticated planner-first architecture for complex task handling.
+KimiChat is a Rust CLI application providing a Claude Code-like experience with tool-enabled LLM interactions. It operates in two modes:
+
+1. **Single LLM Mode** - Direct conversation with one LLM that has full tool access
+2. **Multi-Agent Mode** (`--agents`) - Sophisticated planner-first architecture with specialized agents for complex tasks
+
+Supports multiple LLM backends: Groq, Anthropic, and llama.cpp.
 
 ## Core Architecture
 
-### Multi-Agent System
+KimiChat operates in two modes:
+
+### 1. Single LLM Mode (Default)
+
+**Simple Direct Flow:**
+1. User sends message
+2. Single LLM processes request with full tool access
+3. Tool execution loop: LLM can call tools, see results, and continue
+4. LLM responds directly to user
+
+**Features:**
+- Direct conversation with one LLM instance
+- Access to all available tools (file ops, search, commands, etc.)
+- Simpler for straightforward tasks and conversations
+- Tool calling with confirmations for destructive operations
+- Conversation history with summarization to prevent context overflow
+
+### 2. Multi-Agent System (with `--agents` flag)
 
 **Planner-First Flow:**
 1. User request → PlanningCoordinator
-2. Planner agent analyzes and decomposes request into subtasks
+2. **Planner agent** analyzes and decomposes request into subtasks
 3. Planner assigns subtasks to specialized agents
-4. Agents execute tasks using their available tools
+4. Specialized agents execute tasks using their available tools
 5. Results are synthesized into final response
 
 **Specialized Agents:**
@@ -22,10 +44,11 @@ KimiChat is a Rust CLI application providing a Claude Code-like experience with 
 - `search_specialist` - Search and discovery across codebase
 - `system_operator` - Command execution, builds, and batch operations
 
-Each agent has:
+**Agent Characteristics:**
 - Specific tool access (defined in `agents/configs/*.json`)
 - Iteration limits with dynamic extension via `request_more_iterations` tool
 - System prompts tuned for their specialty
+- Better for complex multi-step tasks requiring specialized expertise
 
 ### Key Design Patterns
 
@@ -46,19 +69,15 @@ Each agent has:
 
 ## Project Structure
 
-### Core Modules
+### Core Modules (used by both modes)
 
 ```
 src/
 ├── main.rs              # KimiChat struct, main entry point
 ├── app/                 # Application modes (setup, REPL, task)
-├── agents/              # Multi-agent orchestration system
-│   ├── coordinator.rs   # Planning and task distribution
-│   ├── agent_factory.rs # Agent creation and execution loop
-│   └── visibility.rs    # Task tracking and progress display
 ├── api/                 # LLM API clients (streaming/non-streaming)
 ├── chat/                # Conversation management
-│   ├── session.rs       # Main chat loop
+│   ├── session.rs       # Main chat loop (single LLM mode)
 │   ├── history.rs       # History summarization
 │   └── state.rs         # State persistence
 ├── config/              # Configuration management
@@ -72,9 +91,24 @@ src/
 └── logging/             # Request/response logging (JSONL format)
 ```
 
-### Agent Configurations
+### Multi-Agent System (used only with `--agents`)
 
-Agent configs in `agents/configs/*.json` define:
+```
+src/agents/
+├── coordinator.rs       # Planning and task distribution
+├── agent_factory.rs     # Agent creation and execution loop
+├── visibility.rs        # Task tracking and progress display
+└── ...
+
+agents/configs/          # Agent configurations (JSON)
+├── planner.json
+├── code_analyzer.json
+├── file_manager.json
+├── search_specialist.json
+└── system_operator.json
+```
+
+**Agent Configurations** (`agents/configs/*.json`) define:
 - Model selection
 - Available tools
 - System prompts
@@ -104,43 +138,45 @@ cargo run -- --llama-cpp-url http://localhost:8080 -i
 
 ## Key Features
 
-### Tool Confirmations
-- File edits show unified diffs before applying
-- Commands require confirmation before execution
-- Batch edits (`plan_edits`/`apply_edit_plan`) validate all changes first
-- Optional user feedback on rejection
+### Tool System (both modes)
+- **Tool Confirmations:** File edits show unified diffs, commands require approval
+- **Batch Edits:** `plan_edits`/`apply_edit_plan` for multi-file changes
+- **Smart Error Handling:** AI-powered tool call repair for malformed JSON
+- **File Operations:** Automatic line range clamping, gitignore respect
+- **XML Support:** Fallback parsing for models that prefer XML format
 
-### Iteration Management
+### Conversation Management (both modes)
+- **History Summarization:** AI-powered summarization prevents context overflow
+- **State Persistence:** Save/load conversation state
+- **Streaming:** Real-time response streaming (default)
+- **Model Switching:** Dynamic model changes during conversation
+
+### Iteration Management (multi-agent mode)
 - Default 10 iterations per agent (prevents infinite loops)
 - Warnings at iteration 8+
-- Agents can request more iterations with justification via `request_more_iterations` tool
+- Agents can request more iterations with justification
 - Dynamic limit adjustment mid-execution
 
-### Smart Error Handling
-- Tool call repair using AI for malformed JSON
-- XML parsing support for models that prefer XML format
-- Automatic line range clamping for file operations
-- Model switching on API errors
-
-### Logging
+### Logging (both modes)
 - JSONL format in `logs/` directory
-- Captures full conversation history
-- Task context (task_id, parent_task_id, agent_name)
+- Full conversation history with tool calls
 - Request/response logging with timestamps
+- Multi-agent mode adds: task_id, parent_task_id, agent_name
 
 ## Working with the Codebase
 
-### Adding New Agents
+### Adding New Tools (applies to both modes)
+1. Implement `Tool` trait in `src/tools/`
+2. Register in tool registry initialization (`src/main.rs`)
+3. Tools are automatically available in single LLM mode
+4. For multi-agent mode: Add to relevant agent configs
+
+### Adding New Agents (multi-agent mode only)
 1. Create config in `agents/configs/your_agent.json`
 2. Define tools, model, and system prompt
 3. Agent will be automatically loaded on startup
 
-### Adding New Tools
-1. Implement `Tool` trait in `src/tools/`
-2. Register in tool registry initialization
-3. Add to relevant agent configs
-
-### Modifying Agent Behavior
+### Modifying Agent Behavior (multi-agent mode only)
 - Edit system prompts in agent config files
 - Adjust tool permissions in `allowed_tools` list
 - Configure iteration limits (future: via config)
@@ -170,10 +206,15 @@ cargo run -- --llama-cpp-url http://localhost:8080 -i
 
 ## Notes
 
-- Planner agent is used only for planning, not execution
+**Both modes:**
 - Tool execution is async with proper error handling
 - Conversation state persists across tool calls
 - All file operations respect gitignore patterns
 - Batch edits use file-based state (`.kimichat_edit_plan.json`)
+
+**Multi-agent mode specific:**
+- Planner agent is used only for planning, not execution
+- Task decomposition only happens for complex multi-step requests
+- Simple requests use `single_task` strategy (no decomposition)
 
 For detailed refactoring history, see `REFACTORING_SUMMARY.md`.
