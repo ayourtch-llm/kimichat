@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs;
 use colored::Colorize;
-use rustyline::DefaultEditor;
 
 /// Tool for opening files with optional line range
 pub struct OpenFileTool;
@@ -288,12 +287,12 @@ impl Tool for ListFilesTool {
     }
 
     fn description(&self) -> &str {
-        "List files matching a glob pattern. Automatically excludes build/cache directories (target/, .git/, node_modules/, etc.). Limited to 1000 results. Supports recursive search with **."
+        "List files matching a glob pattern. Respects .gitignore files (excludes ignored files). Limited to 1000 results. Supports recursive search with **."
     }
 
     fn parameters(&self) -> HashMap<String, ParameterDefinition> {
         HashMap::from([
-            param!("pattern", "string", "Glob pattern (e.g., 'src/**/*.rs', '**/*.json'). Use ** for recursive search. Defaults to '*' (files in current directory). Automatically excludes build/cache directories and limits to 1000 results.", optional, "*"),
+            param!("pattern", "string", "Glob pattern (e.g., 'src/**/*.rs', '**/*.json'). Use ** for recursive search. Defaults to '*' (files in current directory). Respects .gitignore and limits to 1000 results.", optional, "*"),
         ])
     }
 
@@ -302,102 +301,87 @@ impl Tool for ListFilesTool {
             .unwrap_or(Some("*".to_string()))
             .unwrap_or_else(|| "*".to_string());
 
-        let glob_pattern = build_glob_pattern(&pattern, &context.work_dir);
-
-        eprintln!("[DEBUG] list_files with pattern: '{}' in work_dir: {:?}", glob_pattern, context.work_dir);
-
-        // Directories to exclude (common build/cache directories)
-        const EXCLUDED_DIRS: &[&str] = &[
-            "target",
-            ".git",
-            "node_modules",
-            ".cache",
-            "dist",
-            "build",
-            ".next",
-            ".nuxt",
-            "coverage",
-            "__pycache__",
-            ".pytest_cache",
-            ".venv",
-            "venv",
-        ];
+        eprintln!("[DEBUG] list_files with pattern: '{}' in work_dir: {:?}", pattern, context.work_dir);
 
         const MAX_FILES: usize = 1000;
 
-        match glob::glob(&glob_pattern) {
-            Ok(paths) => {
-                let mut files = Vec::new();
-                let mut total_matched = 0;
-                let mut excluded_count = 0;
+        // Use ignore crate's WalkBuilder which respects .gitignore
+        let mut builder = ignore::WalkBuilder::new(&context.work_dir);
+        builder
+            .hidden(false)  // Show hidden files (but still respect .gitignore)
+            .git_ignore(true)  // Respect .gitignore files
+            .git_global(true)  // Respect global gitignore
+            .git_exclude(true);  // Respect .git/info/exclude
 
-                for path in paths {
-                    match path {
-                        Ok(path) => {
-                            if let Some(relative_path) = path.strip_prefix(&context.work_dir).ok() {
-                                // Check if path is in an excluded directory
-                                let path_components: Vec<_> = relative_path.components().collect();
-                                let should_exclude = path_components.iter().any(|comp| {
-                                    if let std::path::Component::Normal(name) = comp {
-                                        if let Some(name_str) = name.to_str() {
-                                            return EXCLUDED_DIRS.contains(&name_str);
-                                        }
-                                    }
-                                    false
-                                });
+        // Parse the glob pattern to determine search scope
+        let glob_matcher = match glob::Pattern::new(&pattern) {
+            Ok(matcher) => matcher,
+            Err(e) => return ToolResult::error(format!("Invalid glob pattern: {}", e)),
+        };
 
-                                if should_exclude {
-                                    excluded_count += 1;
-                                    continue;
-                                }
+        let mut files = Vec::new();
+        let mut total_matched = 0;
+        let mut ignored_count = 0;
 
+        for entry in builder.build() {
+            match entry {
+                Ok(entry) => {
+                    let path = entry.path();
+
+                    // Skip directories, only list files
+                    if !path.is_file() {
+                        continue;
+                    }
+
+                    // Get relative path
+                    if let Ok(relative_path) = path.strip_prefix(&context.work_dir) {
+                        if let Some(path_str) = relative_path.to_str() {
+                            // Check if path matches the glob pattern
+                            if glob_matcher.matches(path_str) {
                                 total_matched += 1;
                                 if files.len() < MAX_FILES {
-                                    if let Some(path_str) = relative_path.to_str() {
-                                        files.push(path_str.to_string());
-                                    }
+                                    files.push(path_str.to_string());
                                 }
                             }
                         }
-                        Err(e) => {
-                            return ToolResult::error(format!("Error reading path: {}", e));
-                        }
                     }
                 }
-
-                files.sort();
-                let result = if files.is_empty() && total_matched == 0 {
-                    format!(
-                        "No files found matching pattern: '{}'\nSearched in: {:?}\nExcluded {} files in build/cache directories\nTip: Use ** for recursive search (e.g., 'src/**/*.rs')",
-                        pattern, context.work_dir, excluded_count
-                    )
-                } else if total_matched > MAX_FILES {
-                    format!(
-                        "⚠️  Found {} matching file(s), but showing only first {} (excluded {} files in build/cache directories):\n{}\n\n\
-                        Tip: Use a more specific pattern to reduce results (e.g., 'src/**/*.rs' instead of '**/*')",
-                        total_matched,
-                        MAX_FILES,
-                        excluded_count,
-                        files.join("\n")
-                    )
-                } else {
-                    let exclusion_note = if excluded_count > 0 {
-                        format!(" (excluded {} files in build/cache directories)", excluded_count)
-                    } else {
-                        String::new()
-                    };
-                    format!(
-                        "Found {} file(s) matching '{}'{}:\n{}",
-                        files.len(),
-                        pattern,
-                        exclusion_note,
-                        files.join("\n")
-                    )
-                };
-
-                ToolResult::success(result)
+                Err(_) => {
+                    ignored_count += 1;
+                }
             }
-            Err(e) => ToolResult::error(format!("Invalid glob pattern: {}", e)),
         }
+
+        files.sort();
+        let result = if files.is_empty() && total_matched == 0 {
+            format!(
+                "No files found matching pattern: '{}'\nSearched in: {:?}\n{} files were ignored (respecting .gitignore)\nTip: Use ** for recursive search (e.g., 'src/**/*.rs')",
+                pattern, context.work_dir, ignored_count
+            )
+        } else if total_matched > MAX_FILES {
+            format!(
+                "⚠️  Found {} matching file(s), but showing only first {} ({} files ignored by .gitignore):\n{}\n\n\
+                Tip: Use a more specific pattern to reduce results (e.g., 'src/**/*.rs' instead of '**/*')",
+                total_matched,
+                MAX_FILES,
+                ignored_count,
+                files.join("\n")
+            )
+        } else {
+            let ignore_note = if ignored_count > 0 {
+                format!(" ({} files ignored by .gitignore)", ignored_count)
+            } else {
+                String::new()
+            };
+            format!(
+                "Found {} file(s) matching '{}'{}:\n{}",
+                files.len(),
+                pattern,
+                ignore_note,
+                files.join("\n")
+            )
+        };
+
+        ToolResult::success(result)
     }
 }
