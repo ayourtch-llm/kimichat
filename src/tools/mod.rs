@@ -10,6 +10,7 @@ pub mod model_management;
 pub mod iteration_control;
 pub mod project_tools;
 pub mod helpers;
+pub mod project_tools;
 
 pub use file_ops::*;
 pub use search::*;
