@@ -29,7 +29,7 @@ use core::{ToolRegistry, ToolParameters};
 use core::tool_context::ToolContext;
 use policy::PolicyManager;
 use tools_execution::validation::{repair_tool_call_with_model, validate_and_fix_tool_calls_in_place};
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, TerminalCommands};
 use config::{ClientConfig, GROQ_API_URL, normalize_api_url, initialize_tool_registry, initialize_agent_system};
 use chat::{save_state, load_state};
 use chat::history::summarize_and_trim_history;
@@ -403,12 +403,18 @@ async fn main() -> Result<()> {
 
     // If a subcommand was provided, execute it and exit
     if let Some(command) = cli.command {
-        // Special handling for Switch command which needs KimiChat
+        // Special handling for commands that need KimiChat or TerminalManager
         let work_dir = env::current_dir()?;
         let result = match &command {
             Commands::Switch { model, reason } => {
                 let mut chat = KimiChat::new("".to_string(), work_dir.clone());
                 chat.switch_model(model, reason)?
+            }
+            Commands::Terminal { command: terminal_cmd } => {
+                // Initialize TerminalManager for terminal commands
+                let log_dir = PathBuf::from("logs/terminals");
+                let terminal_manager = Arc::new(Mutex::new(TerminalManager::new(log_dir)));
+                terminal_cmd.execute(terminal_manager).await?
             }
             _ => command.execute().await?
         };

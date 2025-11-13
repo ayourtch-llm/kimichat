@@ -11,6 +11,7 @@ use crate::policy::PolicyManager;
 use crate::tools::file_ops::*;
 use crate::tools::system::*;
 use crate::tools::search::*;
+use crate::terminal::{PtyLaunchTool, PtySendKeysTool, PtyGetScreenTool, PtyListTool, PtyKillTool};
 
 // Note: KimiChat is needed for the Switch command
 // It will be imported from the parent module when needed
@@ -197,6 +198,49 @@ pub enum Commands {
         #[arg(short = 'e', long)]
         end_line: Option<usize>,
     },
+    /// Manage terminal sessions (PTY sessions)
+    Terminal {
+        #[command(subcommand)]
+        command: TerminalCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TerminalCommands {
+    /// Launch a new terminal session
+    Launch {
+        /// Command to execute (defaults to shell)
+        #[arg(short = 'c', long)]
+        command: Option<String>,
+        /// Working directory
+        #[arg(short = 'd', long)]
+        working_dir: Option<String>,
+        /// Terminal columns
+        #[arg(long, default_value = "80")]
+        cols: u16,
+        /// Terminal rows
+        #[arg(long, default_value = "24")]
+        rows: u16,
+    },
+    /// View the screen contents of a terminal session
+    View {
+        /// Session ID to view
+        session_id: u32,
+    },
+    /// List all active terminal sessions
+    List,
+    /// Kill a terminal session
+    Kill {
+        /// Session ID to kill
+        session_id: u32,
+    },
+    /// Send keys to a terminal session
+    Send {
+        /// Session ID to send keys to
+        session_id: u32,
+        /// Keys to send (supports ^C, [UP], [F1], etc.)
+        keys: String,
+    },
 }
 
 impl Commands {
@@ -331,6 +375,120 @@ impl Commands {
                     }
                     let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
                     let result = OpenFileTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
+                })
+            }
+            Commands::Terminal { .. } => {
+                // Terminal commands need special handling in main.rs with TerminalManager
+                Box::pin(async move {
+                    Err(anyhow::anyhow!("Terminal commands require special handling"))
+                })
+            }
+        }
+    }
+}
+
+impl TerminalCommands {
+    pub fn execute(&self, terminal_manager: std::sync::Arc<std::sync::Mutex<crate::terminal::TerminalManager>>) -> Pin<Box<dyn Future<Output = Result<String>> + '_>> {
+        match self {
+            TerminalCommands::Launch { command, working_dir, cols, rows } => {
+                let command = command.clone();
+                let working_dir = working_dir.clone().map(std::path::PathBuf::from);
+                let cols = *cols;
+                let rows = *rows;
+                Box::pin(async move {
+                    let mut params = ToolParameters::new();
+                    if let Some(cmd) = command {
+                        params.set("command", cmd);
+                    }
+                    if let Some(wd) = working_dir {
+                        params.set("working_dir", wd.to_string_lossy().to_string());
+                    }
+                    params.set("cols", cols as i64);
+                    params.set("rows", rows as i64);
+
+                    let work_dir = env::current_dir().unwrap();
+                    let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
+                    context = context.with_terminal_manager(terminal_manager);
+
+                    let result = PtyLaunchTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
+                })
+            }
+            TerminalCommands::View { session_id } => {
+                let session_id = *session_id;
+                Box::pin(async move {
+                    let mut params = ToolParameters::new();
+                    params.set("session_id", session_id as i64);
+
+                    let work_dir = env::current_dir().unwrap();
+                    let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
+                    context = context.with_terminal_manager(terminal_manager);
+
+                    let result = PtyGetScreenTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
+                })
+            }
+            TerminalCommands::List => {
+                Box::pin(async move {
+                    let params = ToolParameters::new();
+
+                    let work_dir = env::current_dir().unwrap();
+                    let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
+                    context = context.with_terminal_manager(terminal_manager);
+
+                    let result = PtyListTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
+                })
+            }
+            TerminalCommands::Kill { session_id } => {
+                let session_id = *session_id;
+                Box::pin(async move {
+                    let mut params = ToolParameters::new();
+                    params.set("session_id", session_id as i64);
+
+                    let work_dir = env::current_dir().unwrap();
+                    let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
+                    context = context.with_terminal_manager(terminal_manager);
+
+                    let result = PtyKillTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
+                })
+            }
+            TerminalCommands::Send { session_id, keys } => {
+                let session_id = *session_id;
+                let keys = keys.clone();
+                Box::pin(async move {
+                    let mut params = ToolParameters::new();
+                    params.set("session_id", session_id as i64);
+                    params.set("keys", keys);
+                    params.set("special", true); // Enable special key processing
+
+                    let work_dir = env::current_dir().unwrap();
+                    let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
+                    context = context.with_terminal_manager(terminal_manager);
+
+                    let result = PtySendKeysTool.execute(params, &context).await;
                     if result.success {
                         Ok(result.content)
                     } else {
