@@ -4,7 +4,9 @@ use crate::{param, core::tool::{Tool, ToolParameters, ToolResult, ParameterDefin
 use crate::core::tool_context::ToolContext;
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::sync::Arc;
 use serde_json::json;
+use tokio::time::{timeout, Duration};
 
 /// Tool for launching a new PTY terminal session
 pub struct PtyLaunchTool;
@@ -104,14 +106,40 @@ impl Tool for PtySendKeysTool {
             None => return ToolResult::error("Terminal manager not available".to_string()),
         };
 
-        // Get session and send keys
-        let manager = terminal_manager.lock().unwrap();
-        match manager.get_session(session_id) {
+        // Get session - scope the lock to ensure it's dropped before await
+        let session_arc = {
+            let manager = terminal_manager.lock().unwrap();
+            manager.get_session(session_id)
+        }; // manager lock is dropped here
+
+        match session_arc {
             Ok(session_arc) => {
-                let mut session = session_arc.lock().unwrap();
-                match session.send_keys(&keys, special) {
-                    Ok(_) => ToolResult::success(format!("Keys sent to session {}", session_id)),
-                    Err(e) => ToolResult::error(format!("Failed to send keys: {}", e)),
+                // Clone Arc for async operation
+                let session_clone = Arc::clone(&session_arc);
+
+                // Send keys and update screen in a blocking task with timeout
+                let task = tokio::task::spawn_blocking(move || -> Result<String, String> {
+                    let mut session = session_clone.lock().unwrap();
+
+                    // Send the keys
+                    session.send_keys(&keys, special)
+                        .map_err(|e| format!("Failed to send keys: {}", e))?;
+
+                    // Wait a short time for output to be available
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+
+                    // Update screen buffer with any available output
+                    let _ = session.update_screen(); // Ignore errors - buffer may be empty
+
+                    Ok(format!("Keys sent to session {}", session_id))
+                });
+
+                // Wrap with timeout to prevent hanging
+                match timeout(Duration::from_millis(200), task).await {
+                    Ok(Ok(Ok(msg))) => ToolResult::success(msg),
+                    Ok(Ok(Err(e))) => ToolResult::error(e),
+                    Ok(Err(e)) => ToolResult::error(format!("Task error: {}", e)),
+                    Err(_) => ToolResult::error("Operation timed out - PTY may be unresponsive".to_string()),
                 }
             }
             Err(e) => ToolResult::error(format!("Failed to get session: {}", e)),
@@ -155,18 +183,14 @@ impl Tool for PtyGetScreenTool {
             None => return ToolResult::error("Terminal manager not available".to_string()),
         };
 
-        // Get session and screen contents
+        // Get session and screen contents (just read from buffer, no PTY read)
         let manager = terminal_manager.lock().unwrap();
         match manager.get_session(session_id) {
             Ok(session_arc) => {
-                let mut session = session_arc.lock().unwrap();
+                let session = session_arc.lock().unwrap();
 
-                // First update the screen with any new output
-                if let Err(e) = session.update_screen() {
-                    return ToolResult::error(format!("Failed to update screen: {}", e));
-                }
-
-                // Get screen contents
+                // Just get the current screen buffer state without reading from PTY
+                // The buffer is updated when keys are sent or by background tasks
                 match session.get_screen(include_colors, include_cursor) {
                     Ok(contents) => {
                         let cursor = session.get_cursor();

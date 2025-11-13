@@ -70,11 +70,11 @@ impl PtyHandler {
     }
 
     /// Read available data from PTY
+    /// Note: This may block briefly if waiting for data
+    /// Callers should use this within a timeout context
     pub fn read(&mut self) -> Result<String> {
         let mut buffer = vec![0u8; 4096];
 
-        // Try to read without blocking (we'll need to make this non-blocking)
-        // For now, we'll use a simple approach
         match self.reader.read(&mut buffer) {
             Ok(0) => Ok(String::new()),
             Ok(n) => {
