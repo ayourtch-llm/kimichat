@@ -12,6 +12,9 @@ use crate::agents::{
 };
 use crate::models::ModelType;
 
+pub mod helpers;
+pub use helpers::{get_system_prompt, get_api_url, get_api_key};
+
 // Re-export the Groq API URL constant
 pub const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 
