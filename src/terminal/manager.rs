@@ -69,7 +69,12 @@ impl TerminalManager {
             self.log_dir.clone(),
         )?;
 
-        self.sessions.insert(session_id, Arc::new(Mutex::new(session)));
+        let session_arc = Arc::new(Mutex::new(session));
+
+        // Start background reader thread to continuously update screen buffer
+        TerminalSession::start_background_reader(Arc::clone(&session_arc))?;
+
+        self.sessions.insert(session_id, session_arc);
         Ok(session_id)
     }
 

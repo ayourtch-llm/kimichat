@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
 
@@ -40,6 +42,9 @@ pub struct TerminalSession {
     capture_file: Option<PathBuf>,
     logger: SessionLogger,
     metadata: SessionMetadata,
+    // Background reader thread
+    reader_thread: Option<JoinHandle<()>>,
+    reader_stop_flag: Arc<AtomicBool>,
 }
 
 impl TerminalSession {
@@ -95,7 +100,75 @@ impl TerminalSession {
             capture_file: None,
             logger,
             metadata,
+            reader_thread: None,
+            reader_stop_flag: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// Start background reader thread to continuously update screen buffer
+    /// This should be called after the session is wrapped in Arc<Mutex>
+    pub fn start_background_reader(session_arc: Arc<Mutex<Self>>) -> Result<()> {
+        let stop_flag = {
+            let session = session_arc.lock().unwrap();
+            Arc::clone(&session.reader_stop_flag)
+        };
+
+        // Clone the PTY reader for the background thread
+        let mut pty_reader = {
+            let mut session = session_arc.lock().unwrap();
+            session.pty_handler.pty.try_clone_reader()
+                .map_err(|e| anyhow::anyhow!("Failed to clone PTY reader: {}", e))?
+        };
+
+        // Spawn background thread
+        let session_clone = Arc::clone(&session_arc);
+        let handle = thread::spawn(move || {
+            let mut buffer = vec![0u8; 4096];
+
+            loop {
+                // Check if we should stop
+                if stop_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                // Try to read from PTY (non-blocking with timeout handled in pty_handler)
+                match pty_reader.read(&mut buffer) {
+                    Ok(0) => {
+                        // EOF - process exited
+                        break;
+                    }
+                    Ok(n) => {
+                        // Got data - update screen buffer
+                        let data = String::from_utf8_lossy(&buffer[..n]).to_string();
+
+                        if let Ok(mut session) = session_clone.lock() {
+                            session.screen_buffer.process_output(&data);
+                            let _ = session.logger.log_output(&data); // Ignore logging errors
+
+                            if session.capture_enabled {
+                                // TODO: Write to capture file
+                            }
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        // No data available - sleep briefly
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(_) => {
+                        // Read error - probably PTY closed
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Store thread handle
+        {
+            let mut session = session_arc.lock().unwrap();
+            session.reader_thread = Some(handle);
+        }
+
+        Ok(())
     }
 
     /// Get session ID
@@ -185,8 +258,19 @@ impl TerminalSession {
 
     /// Kill the session
     pub fn kill(&mut self) -> Result<()> {
+        // Signal background thread to stop
+        self.reader_stop_flag.store(true, Ordering::Relaxed);
+
+        // Kill the PTY process
         self.pty_handler.kill()?;
         self.metadata.status = SessionStatus::Stopped;
+
+        // Wait for background thread to finish (with timeout)
+        if let Some(handle) = self.reader_thread.take() {
+            // Don't block forever - the thread should stop quickly
+            let _ = handle.join();
+        }
+
         Ok(())
     }
 
@@ -199,6 +283,17 @@ impl TerminalSession {
     pub fn update_status(&mut self) {
         if let Some(exit_code) = self.pty_handler.try_wait() {
             self.metadata.status = SessionStatus::Exited(exit_code);
+        }
+    }
+}
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        // Ensure background thread is stopped
+        self.reader_stop_flag.store(true, Ordering::Relaxed);
+
+        if let Some(handle) = self.reader_thread.take() {
+            let _ = handle.join();
         }
     }
 }

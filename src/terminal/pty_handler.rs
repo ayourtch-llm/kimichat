@@ -6,7 +6,7 @@ use portable_pty::{CommandBuilder, PtySize, PtySystem, native_pty_system};
 
 /// Handles PTY process management
 pub struct PtyHandler {
-    pty: Box<dyn portable_pty::MasterPty + Send>,
+    pub(crate) pty: Box<dyn portable_pty::MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     reader: Box<dyn Read + Send>,
     writer: Box<dyn Write + Send>,

@@ -117,7 +117,8 @@ impl Tool for PtySendKeysTool {
                 // Clone Arc for async operation
                 let session_clone = Arc::clone(&session_arc);
 
-                // Send keys and update screen in a blocking task with timeout
+                // Send keys in a blocking task with timeout
+                // The background reader thread will automatically update the screen buffer
                 let task = tokio::task::spawn_blocking(move || -> Result<String, String> {
                     let mut session = session_clone.lock().unwrap();
 
@@ -125,18 +126,11 @@ impl Tool for PtySendKeysTool {
                     session.send_keys(&keys, special)
                         .map_err(|e| format!("Failed to send keys: {}", e))?;
 
-                    // Wait for terminal to process and produce output
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-
-                    // Update screen buffer with any available output
-                    // The read() uses polling with 150ms timeout, accumulating all available data
-                    let _ = session.update_screen(); // Ignore errors - buffer may be empty
-
                     Ok(format!("Keys sent to session {}", session_id))
                 });
 
-                // Wrap with timeout to prevent hanging (100ms sleep + 150ms read timeout + margin)
-                match timeout(Duration::from_millis(400), task).await {
+                // Wrap with timeout to prevent hanging
+                match timeout(Duration::from_millis(100), task).await {
                     Ok(Ok(Ok(msg))) => ToolResult::success(msg),
                     Ok(Ok(Err(e))) => ToolResult::error(e),
                     Ok(Err(e)) => ToolResult::error(format!("Task error: {}", e)),
@@ -339,13 +333,9 @@ impl Tool for PtyGetCursorTool {
         let manager = terminal_manager.lock().unwrap();
         match manager.get_session(session_id) {
             Ok(session_arc) => {
-                let mut session = session_arc.lock().unwrap();
+                let session = session_arc.lock().unwrap();
 
-                // Update screen first
-                if let Err(e) = session.update_screen() {
-                    return ToolResult::error(format!("Failed to update screen: {}", e));
-                }
-
+                // Screen buffer is automatically updated by background reader thread
                 let cursor = session.get_cursor();
                 let result = json!({
                     "session_id": session_id,
@@ -629,13 +619,9 @@ impl Tool for PtyRequestUserInputTool {
         let manager = terminal_manager.lock().unwrap();
         match manager.get_session(session_id) {
             Ok(session_arc) => {
-                let mut session = session_arc.lock().unwrap();
+                let session = session_arc.lock().unwrap();
 
-                // Update screen first
-                if let Err(e) = session.update_screen() {
-                    return ToolResult::error(format!("Failed to update screen: {}", e));
-                }
-
+                // Screen buffer is automatically updated by background reader thread
                 // Get current screen contents
                 let screen_contents = match session.get_screen(false, true) {
                     Ok(contents) => contents,
