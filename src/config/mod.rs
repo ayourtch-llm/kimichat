@@ -129,6 +129,11 @@ pub fn initialize_tool_registry() -> ToolRegistry {
     registry.register_with_categories(PtyLaunchTool, vec!["terminal".to_string()]);
     registry.register_with_categories(PtySendKeysTool, vec!["terminal".to_string()]);
     registry.register_with_categories(PtyGetScreenTool, vec!["terminal".to_string()]);
+    registry.register_with_categories(PtyGetCursorTool, vec!["terminal".to_string()]);
+    registry.register_with_categories(PtyResizeTool, vec!["terminal".to_string()]);
+    registry.register_with_categories(PtySetScrollbackTool, vec!["terminal".to_string()]);
+    registry.register_with_categories(PtyStartCaptureTool, vec!["terminal".to_string()]);
+    registry.register_with_categories(PtyStopCaptureTool, vec!["terminal".to_string()]);
     registry.register_with_categories(PtyListTool, vec!["terminal".to_string()]);
     registry.register_with_categories(PtyKillTool, vec!["terminal".to_string()]);
 

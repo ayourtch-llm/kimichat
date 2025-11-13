@@ -18,7 +18,9 @@ pub use screen_buffer::ScreenBuffer;
 pub use logger::SessionLogger;
 pub use tools::{
     PtyLaunchTool, PtySendKeysTool, PtyGetScreenTool,
-    PtyListTool, PtyKillTool,
+    PtyListTool, PtyKillTool, PtyGetCursorTool,
+    PtyResizeTool, PtySetScrollbackTool,
+    PtyStartCaptureTool, PtyStopCaptureTool,
 };
 
 // Constants
