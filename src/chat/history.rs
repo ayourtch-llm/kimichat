@@ -8,11 +8,17 @@ use crate::logging::log_request_to_file;
 /// Summarize and trim conversation history when it gets too long
 /// Uses another model to summarize the middle portion of the conversation
 pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()> {
-    const MAX_MESSAGES_BEFORE_SUMMARY: usize = 20;
+    const MAX_CONVERSATION_SIZE_BYTES: usize = 200_000; // 200KB
     const KEEP_RECENT_MESSAGES: usize = 5;
 
-    // Only summarize if we have enough messages
-    if chat.messages.len() <= MAX_MESSAGES_BEFORE_SUMMARY {
+    // Calculate conversation size by serializing to JSON
+    let conversation_size = match serde_json::to_string(&chat.messages) {
+        Ok(json) => json.len(),
+        Err(_) => return Ok(()), // If serialization fails, skip summarization
+    };
+
+    // Only summarize if conversation exceeds size limit
+    if conversation_size <= MAX_CONVERSATION_SIZE_BYTES {
         return Ok(());
     }
 
@@ -25,8 +31,9 @@ pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()
     };
 
     println!(
-        "{} History getting long ({} messages). Asking {} to summarize...",
+        "{} History getting large ({:.1} KB, {} messages). Asking {} to summarize...",
         "📝".yellow(),
+        conversation_size as f64 / 1024.0,
         chat.messages.len(),
         summary_model.display_name()
     );
@@ -161,10 +168,16 @@ pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()
 
         chat.messages = new_history;
 
+        // Calculate new size
+        let new_size = serde_json::to_string(&chat.messages)
+            .map(|json| json.len())
+            .unwrap_or(0);
+
         println!(
-            "{} History summarized and trimmed to {} messages",
+            "{} History summarized and trimmed to {} messages ({:.1} KB)",
             "✅".green(),
-            chat.messages.len()
+            chat.messages.len(),
+            new_size as f64 / 1024.0
         );
 
         // If there's a SWITCH recommendation, ask the current model to decide

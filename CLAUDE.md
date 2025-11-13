@@ -146,7 +146,7 @@ cargo run -- --llama-cpp-url http://localhost:8080 -i
 - **XML Support:** Fallback parsing for models that prefer XML format
 
 ### Conversation Management (both modes)
-- **History Summarization:** AI-powered summarization prevents context overflow
+- **History Summarization:** AI-powered summarization when conversation exceeds 200KB
 - **State Persistence:** Save/load conversation state
 - **Streaming:** Real-time response streaming (default)
 - **Model Switching:** Dynamic model changes during conversation
