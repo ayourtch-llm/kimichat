@@ -31,6 +31,10 @@ impl AgentFactory {
         config.validate()
             .map_err(|e| anyhow::anyhow!("Invalid agent config: {}", e))?;
 
+        // Debug: Show what agent we're creating and what tools it should have
+        eprintln!("[DEBUG] Creating agent '{}' with {} tools: {:?}",
+                 config.name, config.tools.len(), config.tools);
+
         // Get LLM client for this agent
         let llm_client = self.llm_clients.get(&config.model)
             .ok_or_else(|| anyhow::anyhow!("No LLM client available for model: {}", config.model))?
@@ -86,9 +90,18 @@ impl ConfigurableAgent {
         let start_time = std::time::Instant::now();
 
         // Prepare tools for this agent
+        eprintln!("[DEBUG] Agent '{}' preparing tools from config.tools: {:?}",
+                 self.config.name, self.config.tools);
+
         let available_tools: Vec<_> = self.config.tools
             .iter()
-            .filter_map(|tool_name| self.tool_registry.get_tool(tool_name))
+            .filter_map(|tool_name| {
+                let tool = self.tool_registry.get_tool(tool_name);
+                if tool.is_none() {
+                    eprintln!("[DEBUG] Tool '{}' not found in registry!", tool_name);
+                }
+                tool
+            })
             .map(|tool| {
                 let openai_def = tool.to_openai_definition();
                 // Extract just the parameters schema from the full definition
@@ -101,6 +114,11 @@ impl ConfigurableAgent {
                 }
             })
             .collect();
+
+        eprintln!("[DEBUG] Agent '{}' has {} available tools: {:?}",
+                 self.config.name,
+                 available_tools.len(),
+                 available_tools.iter().map(|t| &t.name).collect::<Vec<_>>());
 
         // Prepare conversation context with iteration management instructions
         let enhanced_system_prompt = format!(
@@ -124,6 +142,10 @@ impl ConfigurableAgent {
             ═══════════════════════════════════════════════════════════════",
             self.config.system_prompt
         );
+
+        eprintln!("[DEBUG] Agent '{}' system prompt first 200 chars: {}...",
+                 self.config.name,
+                 &self.config.system_prompt.chars().take(200).collect::<String>());
 
         let mut messages = vec![
             crate::agents::agent::ChatMessage {

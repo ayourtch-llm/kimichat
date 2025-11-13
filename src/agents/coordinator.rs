@@ -57,8 +57,11 @@ impl PlanningCoordinator {
                 config.validate()
                     .map_err(|e| anyhow::anyhow!("Invalid config in {}: {}", path.display(), e))?;
 
-                self.agent_configs.insert(config.name.clone(), config);
                 println!("{} Loaded agent configuration: {}", "📋".blue(), path.display());
+                eprintln!("[DEBUG] Agent '{}' loaded with {} tools: {:?}",
+                         config.name, config.tools.len(), config.tools);
+
+                self.agent_configs.insert(config.name.clone(), config);
             }
         }
 
@@ -435,7 +438,9 @@ impl PlanningCoordinator {
     async fn find_suitable_agent(&self, task: &Task) -> Result<Arc<dyn Agent>> {
         // First check if task has a pre-assigned agent from the planner
         if let Some(assigned_agent) = task.metadata.get("assigned_agent") {
+            eprintln!("[DEBUG] Task has assigned_agent: '{}'", assigned_agent);
             if let Some(config) = self.agent_configs.get(assigned_agent) {
+                eprintln!("[DEBUG] Found config for '{}' with tools: {:?}", assigned_agent, config.tools);
                 let agent = self.agent_factory.create_agent(config)?;
                 println!("{} Using planner-assigned agent '{}' for task", "🎯".purple(), assigned_agent);
                 return Ok(Arc::from(agent));
