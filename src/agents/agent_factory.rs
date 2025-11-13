@@ -108,10 +108,10 @@ impl ConfigurableAgent {
             ═══════════════════════════════════════════════════════════════\n\
             📊 ITERATION MANAGEMENT (CRITICAL)\n\
             ═══════════════════════════════════════════════════════════════\n\
-            You have a DEFAULT LIMIT of 10 iterations (tool call rounds).\n\n\
+            You have a DEFAULT LIMIT of 50 iterations (tool call rounds).\n\n\
             RULES:\n\
             1. Use tools efficiently - each tool call consumes one iteration\n\
-            2. After 5-7 tool calls, you should be ready to provide your answer\n\
+            2. After 20-30 tool calls, you should be ready to provide your answer\n\
             3. When you receive a warning about remaining iterations, you MUST:\n\
                - STOP calling tools immediately\n\
                - Provide your final answer based on information gathered\n\
@@ -148,7 +148,7 @@ impl ConfigurableAgent {
         });
 
         // Execute with LLM and tool calling loop
-        let mut max_iterations = 10;
+        let mut max_iterations = 50;
         let mut iteration = 0;
         loop {
             if iteration >= max_iterations {

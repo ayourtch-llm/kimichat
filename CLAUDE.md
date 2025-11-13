@@ -152,8 +152,8 @@ cargo run -- --llama-cpp-url http://localhost:8080 -i
 - **Model Switching:** Dynamic model changes during conversation
 
 ### Iteration Management (multi-agent mode)
-- Default 10 iterations per agent (prevents infinite loops)
-- Warnings at iteration 8+
+- Default 50 iterations per agent (prevents infinite loops)
+- Warnings at iteration 47+
 - Agents can request more iterations with justification
 - Dynamic limit adjustment mid-execution
 
