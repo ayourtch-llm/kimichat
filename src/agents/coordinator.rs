@@ -172,13 +172,35 @@ impl PlanningCoordinator {
         let planner_config = self.agent_configs.get("planner")
             .ok_or_else(|| anyhow::anyhow!("Planner agent not configured"))?;
 
+        // Build dynamic agent list from loaded configurations
+        let mut agent_list = String::from("AVAILABLE SPECIALIZED AGENTS:\n");
+        for (name, config) in &self.agent_configs {
+            // Skip planner itself
+            if name == "planner" {
+                continue;
+            }
+
+            // Build tools list
+            let tools_str = if config.tools.is_empty() {
+                "no tools".to_string()
+            } else {
+                config.tools.join(", ")
+            };
+
+            agent_list.push_str(&format!("- {}: {} (tools: {})\n",
+                name,
+                config.description,
+                tools_str
+            ));
+        }
+
         // Create planner agent
         let planner = self.agent_factory.create_agent(planner_config)?;
 
-        // Create planning task
+        // Create planning task with dynamic agent list prepended
         let plan_task = Task {
             id: format!("plan_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
-            description: format!("Analyze and decompose this request: {}", request),
+            description: format!("{}\n\nAnalyze and decompose this request: {}", agent_list, request),
             task_type: TaskType::Simple,
             priority: TaskPriority::Critical,
             metadata: HashMap::new(),
