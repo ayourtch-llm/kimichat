@@ -194,13 +194,26 @@ impl PlanningCoordinator {
             ));
         }
 
+        // Debug: Print the agent list being sent to planner
+        eprintln!("[DEBUG] Sending agent list to planner:\n{}", agent_list);
+
         // Create planner agent
         let planner = self.agent_factory.create_agent(planner_config)?;
 
         // Create planning task with dynamic agent list prepended
+        let task_description = format!("{}\n\nAnalyze and decompose this request: {}", agent_list, request);
+
+        // Debug: Show first 500 chars of what we're sending to planner
+        let preview = if task_description.len() > 500 {
+            format!("{}... [truncated]", &task_description[..500])
+        } else {
+            task_description.clone()
+        };
+        eprintln!("[DEBUG] Full task description sent to planner:\n{}", preview);
+
         let plan_task = Task {
             id: format!("plan_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
-            description: format!("{}\n\nAnalyze and decompose this request: {}", agent_list, request),
+            description: task_description,
             task_type: TaskType::Simple,
             priority: TaskPriority::Critical,
             metadata: HashMap::new(),
