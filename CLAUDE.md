@@ -38,17 +38,19 @@ KimiChat operates in two modes:
 5. Results are synthesized into final response
 
 **Specialized Agents:**
-- `planner` - Task decomposition and agent assignment (NO tool access)
+- `planner` - Task decomposition and agent assignment (NO tool access, dynamically discovers available agents)
 - `code_analyzer` - Code analysis and architecture review
 - `file_manager` - File operations (read, write, edit)
 - `search_specialist` - Search and discovery across codebase
 - `system_operator` - Command execution, builds, and batch operations
+- `terminal_specialist` - Interactive terminal sessions, PTY management, REPLs, long-running processes
 
 **Agent Characteristics:**
 - Specific tool access (defined in `agents/configs/*.json`)
 - Iteration limits with dynamic extension via `request_more_iterations` tool
 - System prompts tuned for their specialty
 - Better for complex multi-step tasks requiring specialized expertise
+- Planner dynamically discovers available agents at runtime (no hardcoded agent list)
 
 The system uses a single configurable agent implementation (`ConfigurableAgent`) that is instantiated based on JSON configurations. All agents are instances of the same underlying class, configured differently for their specific roles.
 
@@ -89,6 +91,13 @@ src/
 │   ├── search.rs        # Code search
 │   ├── system.rs        # Command execution
 │   └── iteration_control.rs # Dynamic iteration requests
+├── terminal/            # PTY/terminal session management
+│   ├── session.rs       # Terminal session with background reader
+│   ├── manager.rs       # Multi-session management
+│   ├── pty_handler.rs   # PTY process and I/O
+│   ├── screen_buffer.rs # VT100 terminal emulation
+│   ├── tools.rs         # 11 PTY tool implementations
+│   └── logger.rs        # Session logging
 ├── models/              # Data structures and types
 └── logging/             # Request/response logging (JSONL format)
 ```
@@ -106,11 +115,12 @@ src/agents/
 └── task.rs              # Task and subtask definitions
 
 agents/configs/          # Agent configurations (JSON)
-├── planner.json
-├── code_analyzer.json
-├── file_manager.json
-├── search_specialist.json
-└── system_operator.json
+├── planner.json         # Task planning and decomposition
+├── code_analyzer.json   # Code analysis and architecture
+├── file_manager.json    # File operations
+├── search_specialist.json # Code search and discovery
+├── system_operator.json # Command execution
+└── terminal_specialist.json # PTY/terminal session management
 ```
 
 **Agent Configurations** (`agents/configs/*.json`) define:
@@ -118,6 +128,12 @@ agents/configs/          # Agent configurations (JSON)
 - Available tools
 - System prompts
 - Tool access permissions
+
+**Dynamic Agent Discovery:**
+- Planner automatically discovers all agents from loaded configurations
+- No hardcoded agent lists - just add new `.json` files to `agents/configs/`
+- Agent list with tools is built at runtime and passed to planner
+- Makes system easily extensible without modifying planner code
 
 ## CLI Usage
 
@@ -149,6 +165,7 @@ cargo run -- --llama-cpp-url http://localhost:8080 -i
 - **Smart Error Handling:** AI-powered tool call repair for malformed JSON
 - **File Operations:** Automatic line range clamping, gitignore respect
 - **XML Support:** Fallback parsing for models that prefer XML format
+- **Loop Detection:** Enhanced detection with separate thresholds for consecutive vs scattered repeats, leniency for read-only operations
 
 ### Conversation Management (both modes)
 - **History Summarization:** AI-powered summarization when conversation exceeds 200KB
@@ -161,6 +178,20 @@ cargo run -- --llama-cpp-url http://localhost:8080 -i
 - Warnings at iteration 47+
 - Agents can request more iterations with justification
 - Dynamic limit adjustment mid-execution
+
+### Terminal/PTY Sessions (both modes)
+- **Background Reader:** Each PTY session has a continuous background thread updating screen buffer
+- **Always Current:** Screen buffer is automatically updated as output arrives
+- **No Polling Needed:** Tools read from buffer directly without manual updates
+- **Graceful Shutdown:** Non-blocking thread cleanup prevents hangs on session kill
+- **11 PTY Tools:** Launch, send keys, get screen, list, kill, cursor, resize, scrollback, capture start/stop, request input
+- **Explicit \n Requirement:** Tool descriptions emphasize newline requirement for command execution
+
+### Interruption Support
+- **Single LLM Mode:** Ctrl-C at readline prompt cancels input (existing rustyline behavior)
+- **Multi-Agent Mode:** Ctrl-C during tool execution interrupts agent gracefully via cancellation tokens
+- **Cancellation Propagation:** Token flows through coordinator → tasks → agents
+- **Clean Exit:** Returns to REPL prompt without hanging
 
 ### Logging (both modes)
 - JSONL format in `logs/` directory
@@ -180,6 +211,7 @@ cargo run -- --llama-cpp-url http://localhost:8080 -i
 1. Create config in `agents/configs/your_agent.json`
 2. Define tools, model, and system prompt
 3. Agent will be automatically loaded on startup
+4. Planner will automatically discover and use the new agent (no code changes needed)
 
 ### Modifying Agent Behavior (multi-agent mode only)
 - Edit system prompts in agent config files
@@ -216,10 +248,23 @@ cargo run -- --llama-cpp-url http://localhost:8080 -i
 - Conversation state persists across tool calls
 - All file operations respect gitignore patterns
 - Batch edits use file-based state (`.kimichat_edit_plan.json`)
+- PTY sessions use background reader threads for continuous screen buffer updates
+- Loop detection distinguishes between consecutive and scattered repeats
+- Read-only tools (file reads, searches) allowed more repetitions than write operations
 
 **Multi-agent mode specific:**
 - Planner agent is used only for planning, not execution (has no tools)
+- Planner dynamically discovers available agents at runtime
 - Task decomposition only happens for complex multi-step requests
 - Simple requests use `single_task` strategy (no decomposition)
+- Ctrl-C interruption support with cancellation token propagation
+- Cancellation tokens are optional and default to `None` in non-interactive modes
+
+**Terminal/PTY implementation:**
+- Background reader thread per session (spawned at session creation)
+- Thread continuously reads from PTY and updates screen buffer
+- Non-blocking kill operation (thread finishes asynchronously)
+- Tools just read from buffer without triggering manual updates
+- Prevents race conditions and data loss from orphaned threads
 
 For detailed refactoring history, see `REFACTORING_SUMMARY.md`.
