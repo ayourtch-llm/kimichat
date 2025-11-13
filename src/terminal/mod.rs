@@ -16,7 +16,10 @@ pub use manager::TerminalManager;
 pub use session::{TerminalSession, SessionId, SessionMetadata, SessionStatus};
 pub use screen_buffer::ScreenBuffer;
 pub use logger::SessionLogger;
-pub use tools::*;
+pub use tools::{
+    PtyLaunchTool, PtySendKeysTool, PtyGetScreenTool,
+    PtyListTool, PtyKillTool,
+};
 
 // Constants
 pub const MAX_CONCURRENT_SESSIONS: usize = 15;

@@ -130,6 +130,7 @@ pub struct ExecutionContext {
     pub tool_registry: std::sync::Arc<ToolRegistry>,
     pub llm_client: std::sync::Arc<dyn LlmClient>,
     pub conversation_history: Vec<ChatMessage>,
+    pub terminal_manager: Option<std::sync::Arc<std::sync::Mutex<crate::terminal::TerminalManager>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

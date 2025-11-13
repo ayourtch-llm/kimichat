@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use crate::policy::PolicyManager;
+use crate::terminal::TerminalManager;
 
 /// Tool execution context
 ///
@@ -9,12 +11,14 @@ use crate::policy::PolicyManager;
 /// - Session identifier for tracking operations
 /// - Environment variables for configuration
 /// - Policy manager for permission checking
+/// - Terminal manager for PTY session management
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub work_dir: PathBuf,
     pub session_id: String,
     pub environment: HashMap<String, String>,
     pub policy_manager: PolicyManager,
+    pub terminal_manager: Option<Arc<Mutex<TerminalManager>>>,
 }
 
 impl ToolContext {
@@ -24,11 +28,17 @@ impl ToolContext {
             session_id,
             environment: HashMap::new(),
             policy_manager,
+            terminal_manager: None,
         }
     }
 
     pub fn with_env(mut self, key: String, value: String) -> Self {
         self.environment.insert(key, value);
+        self
+    }
+
+    pub fn with_terminal_manager(mut self, terminal_manager: Arc<Mutex<TerminalManager>>) -> Self {
+        self.terminal_manager = Some(terminal_manager);
         self
     }
 

@@ -14,6 +14,17 @@ pub struct TerminalManager {
     max_sessions: usize,
 }
 
+impl std::fmt::Debug for TerminalManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TerminalManager")
+            .field("next_id", &self.next_id)
+            .field("log_dir", &self.log_dir)
+            .field("max_sessions", &self.max_sessions)
+            .field("session_count", &self.sessions.len())
+            .finish()
+    }
+}
+
 impl TerminalManager {
     /// Create a new terminal manager
     pub fn new(log_dir: PathBuf) -> Self {

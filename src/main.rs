@@ -261,6 +261,7 @@ impl KimiChat {
                 tool_registry: tool_registry_arc,
                 llm_client,
                 conversation_history,
+                terminal_manager: Some(self.terminal_manager.clone()),
             };
 
             // Debug: Log current model
@@ -376,7 +377,7 @@ impl KimiChat {
                     self.work_dir.clone(),
                     format!("session_{}", chrono::Utc::now().timestamp()),
                     self.policy_manager.clone()
-                );
+                ).with_terminal_manager(self.terminal_manager.clone());
 
                 let result = self.tool_registry.execute_tool(name, params, &context).await;
 

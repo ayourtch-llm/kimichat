@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::core::ToolRegistry;
 use crate::policy::PolicyManager;
 use crate::tools::*;
+use crate::terminal::*;
 use crate::agents::{
     PlanningCoordinator, AgentFactory, LlmClient,
     AnthropicLlmClient, GroqLlmClient, LlamaCppClient,
@@ -123,6 +124,13 @@ pub fn initialize_tool_registry() -> ToolRegistry {
 
     // Register iteration control tools
     registry.register_with_categories(RequestMoreIterationsTool, vec!["agent_control".to_string()]);
+
+    // Register PTY terminal tools
+    registry.register_with_categories(PtyLaunchTool, vec!["terminal".to_string()]);
+    registry.register_with_categories(PtySendKeysTool, vec!["terminal".to_string()]);
+    registry.register_with_categories(PtyGetScreenTool, vec!["terminal".to_string()]);
+    registry.register_with_categories(PtyListTool, vec!["terminal".to_string()]);
+    registry.register_with_categories(PtyKillTool, vec!["terminal".to_string()]);
 
     registry
 }

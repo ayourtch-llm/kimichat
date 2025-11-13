@@ -248,11 +248,14 @@ impl ConfigurableAgent {
                                 // Parse arguments and execute
                                 match crate::core::ToolParameters::from_json(tool_args) {
                                     Ok(params) => {
-                                        let tool_context = crate::core::tool_context::ToolContext::new(
+                                        let mut tool_context = crate::core::tool_context::ToolContext::new(
                                             context.workspace_dir.clone(),
                                             context.session_id.clone(),
                                             self.policy_manager.clone(),
                                         );
+                                        if let Some(ref tm) = context.terminal_manager {
+                                            tool_context = tool_context.with_terminal_manager(tm.clone());
+                                        }
                                         tool.execute(params, &tool_context).await
                                     }
                                     Err(e) => {

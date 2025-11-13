@@ -400,6 +400,7 @@ impl PlanningCoordinator {
             tool_registry: Arc::clone(&context.tool_registry),
             llm_client: Arc::clone(&context.llm_client),
             conversation_history: context.conversation_history.clone(),
+            terminal_manager: context.terminal_manager.clone(),
         };
 
         // Execute task

@@ -43,6 +43,7 @@ pub struct TaskContextBuilder {
     tool_registry: Option<std::sync::Arc<crate::core::tool_registry::ToolRegistry>>,
     llm_client: Option<std::sync::Arc<dyn crate::agents::agent::LlmClient>>,
     conversation_history: Vec<crate::agents::agent::ChatMessage>,
+    terminal_manager: Option<std::sync::Arc<std::sync::Mutex<crate::terminal::TerminalManager>>>,
 }
 
 impl TaskContextBuilder {
@@ -53,6 +54,7 @@ impl TaskContextBuilder {
             tool_registry: None,
             llm_client: None,
             conversation_history: Vec::new(),
+            terminal_manager: None,
         }
     }
 
@@ -81,6 +83,11 @@ impl TaskContextBuilder {
         self
     }
 
+    pub fn with_terminal_manager(mut self, terminal_manager: std::sync::Arc<std::sync::Mutex<crate::terminal::TerminalManager>>) -> Self {
+        self.terminal_manager = Some(terminal_manager);
+        self
+    }
+
     pub fn build(self) -> Result<crate::agents::agent::ExecutionContext, String> {
         Ok(crate::agents::agent::ExecutionContext {
             workspace_dir: self.workspace_dir.ok_or("workspace_dir is required")?,
@@ -88,6 +95,7 @@ impl TaskContextBuilder {
             tool_registry: self.tool_registry.ok_or("tool_registry is required")?,
             llm_client: self.llm_client.ok_or("llm_client is required")?,
             conversation_history: self.conversation_history,
+            terminal_manager: self.terminal_manager,
         })
     }
 }
