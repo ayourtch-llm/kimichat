@@ -229,7 +229,29 @@ impl ConfigurableAgent {
                      available_tools.len(),
                      available_tools.iter().map(|t| &t.name).collect::<Vec<_>>());
 
-            match self.llm_client.chat(current_messages.clone(), available_tools.clone()).await {
+            // Race LLM call against cancellation token
+            let llm_result = if let Some(ref token) = context.cancellation_token {
+                tokio::select! {
+                    result = self.llm_client.chat(current_messages.clone(), available_tools.clone()) => result,
+                    _ = token.cancelled() => {
+                        eprintln!("[DEBUG] LLM call interrupted by user (Ctrl-C)");
+                        let elapsed = start_time.elapsed();
+                        return crate::agents::agent::AgentResult {
+                            success: false,
+                            content: "Task interrupted during LLM call".to_string(),
+                            task_id: task.id.clone(),
+                            agent_name: self.config.name.clone(),
+                            execution_time: elapsed.as_millis() as u64,
+                            next_tasks: None,
+                            metadata: HashMap::new(),
+                        };
+                    }
+                }
+            } else {
+                self.llm_client.chat(current_messages.clone(), available_tools.clone()).await
+            };
+
+            match llm_result {
                 Ok(response) => {
                     // Check if LLM wants to call tools
                     if let Some(tool_calls) = &response.message.tool_calls {
