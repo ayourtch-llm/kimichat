@@ -61,7 +61,7 @@ impl ToolContext {
     ) -> anyhow::Result<(bool, Option<String>)> {
         use crate::policy::Decision;
         use colored::Colorize;
-        use rustyline::DefaultEditor;
+        use std::io::{self, BufRead, Write};
 
         let decision = self.policy_manager.evaluate(&action, target);
 
@@ -71,12 +71,13 @@ impl ToolContext {
             Decision::Ask => {
                 // Ask the user for confirmation
                 println!("\n{}", prompt_message.bright_green().bold());
+                print!(">>> ");
+                io::stdout().flush()?;
 
-                let mut rl = DefaultEditor::new()
-                    .map_err(|e| anyhow::anyhow!("Failed to create readline editor: {}", e))?;
-
-                let response = rl.readline(">>> ")
-                    .map_err(|_| anyhow::anyhow!("Cancelled by user"))?;
+                let stdin = io::stdin();
+                let mut handle = stdin.lock();
+                let mut response = String::new();
+                handle.read_line(&mut response)?;
 
                 let response = response.trim();
                 let response_lower = response.to_lowercase();
@@ -85,8 +86,12 @@ impl ToolContext {
                 let rejection_reason = if !approved {
                     // Ask for reason if rejected
                     println!("{}", "Why not? (optional - helps the AI understand):".bright_yellow());
-                    match rl.readline(">>> ") {
-                        Ok(reason) => {
+                    print!(">>> ");
+                    io::stdout().flush()?;
+
+                    let mut reason = String::new();
+                    match handle.read_line(&mut reason) {
+                        Ok(_) => {
                             let reason = reason.trim();
                             if reason.is_empty() {
                                 None
