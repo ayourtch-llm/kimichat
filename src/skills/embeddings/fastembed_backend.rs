@@ -2,6 +2,7 @@
 use anyhow::{Result, Context};
 use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
 use std::sync::Mutex;
+use std::path::PathBuf;
 use super::EmbeddingBackend;
 
 /// FastEmbed-based embedding backend
@@ -13,6 +14,27 @@ pub struct FastEmbedBackend {
 }
 
 impl FastEmbedBackend {
+    /// Get or create the cache directory for FastEmbed models
+    /// Returns ~/.okaychat/fastembed
+    fn get_cache_dir() -> Result<PathBuf> {
+        let home_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .context("Failed to get home directory")?;
+
+        let cache_dir = PathBuf::from(home_dir)
+            .join(".okaychat")
+            .join("fastembed");
+
+        // Create directory if it doesn't exist
+        if !cache_dir.exists() {
+            std::fs::create_dir_all(&cache_dir)
+                .context("Failed to create cache directory")?;
+            eprintln!("Created FastEmbed cache directory: {:?}", cache_dir);
+        }
+
+        Ok(cache_dir)
+    }
+
     /// Create a new FastEmbed backend with default settings
     /// Uses all-MiniLM-L6-v2 model (~25MB, 384 dimensions)
     pub fn new() -> Result<Self> {
@@ -23,8 +45,13 @@ impl FastEmbedBackend {
     pub fn with_model(model: EmbeddingModel) -> Result<Self> {
         eprintln!("Loading FastEmbed model: {:?}", model);
 
+        // Get cache directory
+        let cache_dir = Self::get_cache_dir()?;
+        eprintln!("Using cache directory: {:?}", cache_dir);
+
         let embedding_model = TextEmbedding::try_new(
             InitOptions::new(model.clone())
+                .with_cache_dir(cache_dir)
                 .with_show_download_progress(true)
         ).context("Failed to initialize FastEmbed model")?;
 
