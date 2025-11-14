@@ -502,6 +502,7 @@ impl PlanningCoordinator {
             llm_client: Arc::clone(&context.llm_client),
             conversation_history: context.conversation_history.clone(),
             terminal_manager: context.terminal_manager.clone(),
+            skill_registry: context.skill_registry.clone(),
             cancellation_token: context.cancellation_token.clone(),
         };
 

@@ -44,6 +44,7 @@ pub struct TaskContextBuilder {
     llm_client: Option<std::sync::Arc<dyn crate::agents::agent::LlmClient>>,
     conversation_history: Vec<crate::agents::agent::ChatMessage>,
     terminal_manager: Option<std::sync::Arc<std::sync::Mutex<crate::terminal::TerminalManager>>>,
+    skill_registry: Option<std::sync::Arc<crate::skills::SkillRegistry>>,
     cancellation_token: Option<tokio_util::sync::CancellationToken>,
 }
 
@@ -56,6 +57,7 @@ impl TaskContextBuilder {
             llm_client: None,
             conversation_history: Vec::new(),
             terminal_manager: None,
+            skill_registry: None,
             cancellation_token: None,
         }
     }
@@ -90,6 +92,11 @@ impl TaskContextBuilder {
         self
     }
 
+    pub fn with_skill_registry(mut self, skill_registry: std::sync::Arc<crate::skills::SkillRegistry>) -> Self {
+        self.skill_registry = Some(skill_registry);
+        self
+    }
+
     pub fn build(self) -> Result<crate::agents::agent::ExecutionContext, String> {
         Ok(crate::agents::agent::ExecutionContext {
             workspace_dir: self.workspace_dir.ok_or("workspace_dir is required")?,
@@ -98,6 +105,7 @@ impl TaskContextBuilder {
             llm_client: self.llm_client.ok_or("llm_client is required")?,
             conversation_history: self.conversation_history,
             terminal_manager: self.terminal_manager,
+            skill_registry: self.skill_registry,
             cancellation_token: self.cancellation_token,
         })
     }

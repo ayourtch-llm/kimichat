@@ -125,6 +125,11 @@ pub fn initialize_tool_registry() -> ToolRegistry {
     // Register iteration control tools
     registry.register_with_categories(RequestMoreIterationsTool, vec!["agent_control".to_string()]);
 
+    // Register skill tools
+    registry.register_with_categories(LoadSkillTool, vec!["skills".to_string()]);
+    registry.register_with_categories(ListSkillsTool, vec!["skills".to_string()]);
+    registry.register_with_categories(FindRelevantSkillsTool, vec!["skills".to_string()]);
+
     // Register PTY terminal tools
     registry.register_with_categories(PtyLaunchTool, vec!["terminal".to_string()]);
     registry.register_with_categories(PtySendKeysTool, vec!["terminal".to_string()]);

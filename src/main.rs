@@ -23,6 +23,7 @@ mod chat;
 mod api;
 mod app;
 mod terminal;
+mod skills;
 
 use logging::ConversationLogger;
 use core::{ToolRegistry, ToolParameters};
@@ -70,6 +71,8 @@ pub(crate) struct KimiChat {
     pub(crate) policy_manager: PolicyManager,
     // Terminal manager
     pub(crate) terminal_manager: Arc<Mutex<TerminalManager>>,
+    // Skill registry
+    pub(crate) skill_registry: Option<Arc<skills::SkillRegistry>>,
     // Streaming mode
     pub(crate) stream_responses: bool,
     // Verbose debug mode
@@ -136,6 +139,18 @@ impl KimiChat {
 
     fn new_with_config(client_config: ClientConfig, work_dir: PathBuf, use_agents: bool, policy_manager: PolicyManager, stream_responses: bool, verbose: bool) -> Self {
         let tool_registry = initialize_tool_registry();
+
+        // Initialize skill registry
+        let skills_dir = work_dir.join("skills");
+        let skill_registry = match skills::SkillRegistry::new(skills_dir) {
+            Ok(registry) => Some(Arc::new(registry)),
+            Err(e) => {
+                eprintln!("{} Failed to load skills: {}", "⚠️".yellow(), e);
+                eprintln!("{} Skills will not be available", "⚠️".yellow());
+                None
+            }
+        };
+
         let agent_coordinator = if use_agents {
             match initialize_agent_system(&client_config, &tool_registry, &policy_manager) {
                 Ok(coordinator) => Some(coordinator),
@@ -176,6 +191,7 @@ impl KimiChat {
             client_config,
             policy_manager,
             terminal_manager,
+            skill_registry,
             stream_responses,
             verbose,
             debug_level: 0, // Default debug level is 0 (off)
@@ -262,6 +278,7 @@ impl KimiChat {
                 llm_client,
                 conversation_history,
                 terminal_manager: Some(self.terminal_manager.clone()),
+                skill_registry: self.skill_registry.clone(),
                 cancellation_token,
             };
 
@@ -374,11 +391,18 @@ impl KimiChat {
                 let params = ToolParameters::from_json(arguments)
                     .with_context(|| format!("Failed to parse tool arguments for '{}': {}", name, arguments))?;
 
-                let context = ToolContext::new(
+                let mut context = ToolContext::new(
                     self.work_dir.clone(),
                     format!("session_{}", chrono::Utc::now().timestamp()),
                     self.policy_manager.clone()
                 ).with_terminal_manager(self.terminal_manager.clone());
+
+                // Add skill registry if available
+                if let Some(ref registry) = self.skill_registry {
+                    context = context.with_skill_registry(Arc::clone(registry));
+                }
+
+                let context = context;
 
                 let result = self.tool_registry.execute_tool(name, params, &context).await;
 

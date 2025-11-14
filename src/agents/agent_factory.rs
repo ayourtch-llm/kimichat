@@ -290,6 +290,9 @@ impl ConfigurableAgent {
                                         if let Some(ref tm) = context.terminal_manager {
                                             tool_context = tool_context.with_terminal_manager(tm.clone());
                                         }
+                                        if let Some(ref sr) = context.skill_registry {
+                                            tool_context = tool_context.with_skill_registry(sr.clone());
+                                        }
                                         tool.execute(params, &tool_context).await
                                     }
                                     Err(e) => {

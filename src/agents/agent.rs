@@ -131,6 +131,7 @@ pub struct ExecutionContext {
     pub llm_client: std::sync::Arc<dyn LlmClient>,
     pub conversation_history: Vec<ChatMessage>,
     pub terminal_manager: Option<std::sync::Arc<std::sync::Mutex<crate::terminal::TerminalManager>>>,
+    pub skill_registry: Option<std::sync::Arc<crate::skills::SkillRegistry>>,
     pub cancellation_token: Option<tokio_util::sync::CancellationToken>,
 }
 

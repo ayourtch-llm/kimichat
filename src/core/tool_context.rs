@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use crate::policy::PolicyManager;
 use crate::terminal::TerminalManager;
+use crate::skills::SkillRegistry;
 
 /// Tool execution context
 ///
@@ -12,6 +13,7 @@ use crate::terminal::TerminalManager;
 /// - Environment variables for configuration
 /// - Policy manager for permission checking
 /// - Terminal manager for PTY session management
+/// - Skill registry for accessing skills
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub work_dir: PathBuf,
@@ -19,6 +21,7 @@ pub struct ToolContext {
     pub environment: HashMap<String, String>,
     pub policy_manager: PolicyManager,
     pub terminal_manager: Option<Arc<Mutex<TerminalManager>>>,
+    pub skill_registry: Option<Arc<SkillRegistry>>,
 }
 
 impl ToolContext {
@@ -29,6 +32,7 @@ impl ToolContext {
             environment: HashMap::new(),
             policy_manager,
             terminal_manager: None,
+            skill_registry: None,
         }
     }
 
@@ -39,6 +43,11 @@ impl ToolContext {
 
     pub fn with_terminal_manager(mut self, terminal_manager: Arc<Mutex<TerminalManager>>) -> Self {
         self.terminal_manager = Some(terminal_manager);
+        self
+    }
+
+    pub fn with_skill_registry(mut self, skill_registry: Arc<SkillRegistry>) -> Self {
+        self.skill_registry = Some(skill_registry);
         self
     }
 
