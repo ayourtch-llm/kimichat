@@ -1,85 +1,147 @@
-/// More accurate rustyline SIGWINCH panic reproduction with tokio
+/// Accurate rustyline SIGWINCH panic reproduction with tokio + nested editors
 ///
-/// This better simulates the actual kimichat scenario where:
-/// - Tool confirmations create temporary DefaultEditor instances
-/// - The main thread is in tokio's runtime parking/waiting
-/// - Window resize triggers SIGWINCH while in tokio's condvar wait
+/// This closely simulates the actual kimichat multi-agent scenario:
+/// - Main thread runs tokio runtime
+/// - Agents execute async tasks
+/// - Tool confirmations create temporary rustyline editors DURING async execution
+/// - Window resize while tokio is parked/waiting → panic
 ///
 /// To reproduce:
 /// 1. Run: cargo run --bin rustyline_sigwinch_tokio_repro
-/// 2. Answer 'y' to the first prompt
-/// 3. Resize terminal window during the async sleep
-/// 4. Program panics with "fd != -1"
+/// 2. Type "run" to start an agent task
+/// 3. Agent will ask for tool confirmations (creates nested rustyline editors)
+/// 4. Answer the confirmation prompts
+/// 5. While agent is working, resize terminal window
+/// 6. May panic with "fd != -1"
 
+use rustyline::DefaultEditor;
 use std::io::{self, Write};
 use std::time::Duration;
 use tokio::time::sleep;
 
-/// Simulates a tool confirmation prompt using temporary rustyline editor
-fn get_user_confirmation() -> bool {
-    use rustyline::DefaultEditor;
+/// Simulates a tool confirmation using temporary rustyline editor
+/// This creates a nested editor while the main REPL editor exists
+fn get_tool_confirmation(tool_name: &str) -> bool {
+    println!("\n  🔧 Tool: {}", tool_name);
+    println!("  [Creating temporary rustyline editor for confirmation]");
 
-    println!("\n🔧 Tool wants to execute a command");
-    print!("Execute? (y/N): ");
-    io::stdout().flush().unwrap();
+    // Create temporary editor - this is the problematic pattern!
+    let mut rl = match DefaultEditor::new() {
+        Ok(rl) => rl,
+        Err(e) => {
+            eprintln!("  Failed to create confirmation editor: {}", e);
+            return false;
+        }
+    };
 
-    // Create temporary editor - sets up SIGWINCH handlers
-    let mut rl = DefaultEditor::new().expect("Failed to create editor");
-
-    match rl.readline(">>> ") {
-        Ok(response) => {
-            let response = response.trim().to_lowercase();
+    match rl.readline("  Execute this tool? (y/n) >>> ") {
+        Ok(line) => {
+            let response = line.trim().to_lowercase();
             response == "y" || response == "yes"
         }
         Err(_) => false,
     }
-    // Editor dropped here, but signal handlers persist!
+    // Editor dropped here, but we're about to go back into tokio execution!
 }
 
-/// Simulates agent execution in tokio runtime
-async fn simulate_agent_execution() {
-    println!("\n🤖 Agent is executing...");
-    println!("\n╔═══════════════════════════════════════════════════════════╗");
-    println!("║  👉 RESIZE YOUR TERMINAL WINDOW NOW                       ║");
-    println!("║                                                           ║");
-    println!("║  Expected: Panic from rustyline's SIGWINCH handler       ║");
-    println!("║  Message: 'fd != -1' at unix.rs:1197                     ║");
-    println!("╚═══════════════════════════════════════════════════════════╝\n");
+/// Simulates an agent executing multiple tool calls
+async fn run_agent_task(task_name: &str) {
+    println!("\n🤖 Agent started: {}", task_name);
+    println!("════════════════════════════════════════════════════════\n");
 
-    for i in 1..=20 {
-        print!("\r⏱️  Agent working... {} seconds (resize window now!)", i);
-        io::stdout().flush().unwrap();
-        sleep(Duration::from_secs(1)).await;
+    // Simulate agent making multiple tool calls
+    for i in 1..=3 {
+        println!("📋 Agent iteration {}/3", i);
+
+        // Simulate thinking
+        sleep(Duration::from_millis(500)).await;
+
+        // Agent wants to call a tool - needs confirmation
+        // This creates a nested rustyline editor!
+        if !get_tool_confirmation(&format!("read_file_{}.txt", i)) {
+            println!("  ✗ Tool cancelled");
+            continue;
+        }
+
+        println!("  ✓ Tool executed");
+        println!("  [Temporary editor dropped, back in tokio async context]\n");
+
+        println!("╔═══════════════════════════════════════════════════════════╗");
+        println!("║  👉 RESIZE TERMINAL NOW (while agent is working)          ║");
+        println!("║                                                           ║");
+        println!("║  The nested editor was dropped. Now in tokio async       ║");
+        println!("║  execution. SIGWINCH during tokio parking may panic.     ║");
+        println!("╚═══════════════════════════════════════════════════════════╝\n");
+
+        // Simulate tool execution and agent thinking
+        for j in 1..=5 {
+            print!("\r  ⏱️  Agent processing... {} seconds (resize window now!)", j);
+            io::stdout().flush().unwrap();
+            sleep(Duration::from_secs(1)).await;
+        }
+        println!();
     }
 
-    println!("\n✅ Agent finished");
+    println!("\n✅ Agent task completed: {}", task_name);
+    println!("════════════════════════════════════════════════════════\n");
 }
 
 #[tokio::main]
 async fn main() {
-    println!("=== rustyline SIGWINCH + Tokio Panic Reproduction ===\n");
-    println!("This simulates the exact kimichat scenario:\n");
-    println!("1. Tool confirmation creates temporary rustyline editor");
-    println!("2. Editor is dropped but SIGWINCH handlers persist");
-    println!("3. Main thread enters tokio runtime parking");
-    println!("4. Window resize triggers orphaned signal handler");
-    println!("5. Handler tries to use invalid fd -> PANIC\n");
+    println!("=== rustyline SIGWINCH + Tokio + Nested Editors Reproduction ===\n");
+    println!("This simulates the exact kimichat multi-agent scenario:\n");
+    println!("1. Main REPL uses rustyline DefaultEditor");
+    println!("2. Agents execute async tasks in tokio runtime");
+    println!("3. Tool confirmations create NESTED temporary editors");
+    println!("4. After confirmation, execution returns to tokio async context");
+    println!("5. Window resize while tokio is parked → SIGWINCH → PANIC\n");
 
-    // Step 1: Simulate tool confirmation (creates + drops rustyline)
-    if !get_user_confirmation() {
-        println!("Cancelled by user");
-        return;
+    // Create main REPL editor
+    let mut main_rl = match DefaultEditor::new() {
+        Ok(rl) => rl,
+        Err(e) => {
+            eprintln!("Failed to create main REPL editor: {}", e);
+            return;
+        }
+    };
+
+    println!("Main REPL started. Commands:");
+    println!("  run   - Start an agent task (creates nested editors for confirmations)");
+    println!("  quit  - Exit\n");
+
+    loop {
+        match main_rl.readline(">>> ") {
+            Ok(line) => {
+                let line = line.trim();
+
+                if line == "quit" || line == "exit" {
+                    println!("Exiting...");
+                    break;
+                }
+
+                if line == "run" {
+                    // Launch agent task
+                    // The agent will create nested rustyline editors for confirmations
+                    // Then return to tokio async execution
+                    run_agent_task("Example Task").await;
+
+                    println!("Try running 'run' again and resize during agent execution!");
+                } else if !line.is_empty() {
+                    println!("Unknown command: {}", line);
+                    println!("Try: run, quit");
+                }
+            }
+            Err(rustyline::error::ReadlineError::Interrupted) => {
+                println!("\n^C - Use 'quit' to exit");
+            }
+            Err(rustyline::error::ReadlineError::Eof) => {
+                println!("\n^D");
+                break;
+            }
+            Err(err) => {
+                eprintln!("Error: {:?}", err);
+                break;
+            }
+        }
     }
-
-    println!("\n✓ Confirmation received");
-    println!("✓ rustyline editor dropped (but SIGWINCH handler still active!)");
-
-    // Step 2: Enter tokio async work (runtime will park waiting for events)
-    // This is when SIGWINCH will hit the orphaned handler
-    simulate_agent_execution().await;
-
-    println!("\nIf no panic occurred:");
-    println!("- Try running again and resize during the countdown");
-    println!("- The bug is timing-dependent");
-    println!("- Must resize while tokio runtime is parked/waiting");
 }

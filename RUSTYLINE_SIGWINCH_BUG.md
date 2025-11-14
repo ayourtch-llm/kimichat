@@ -9,33 +9,44 @@ rustyline's global SIGWINCH (window resize) signal handler can panic with `fd !=
 
 ## Reproduction
 
-We provide two standalone programs that reproduce this issue:
+We provide two standalone programs that reproduce this issue. Both demonstrate the **nested editors** pattern that triggers the bug.
 
-### Simple Reproduction
+### Simple Reproduction (Nested Editors)
 
 ```bash
 cargo run --bin rustyline_sigwinch_repro
 ```
 
-1. Program creates a temporary `DefaultEditor` and uses it
-2. Editor is dropped
-3. Program waits for 30 seconds
-4. **Resize your terminal window during the wait**
-5. Program panics with `fd != -1` from rustyline's SIGWINCH handler
+1. Program creates a main REPL with `DefaultEditor`
+2. Type `confirm` to trigger a nested temporary editor
+3. Answer `y` to the confirmation prompt
+4. Nested editor is dropped
+5. **Resize your terminal window multiple times**
+6. May panic with `fd != -1` from rustyline's SIGWINCH handler
 
-### Tokio-based Reproduction (More Accurate)
+The key is **nesting**: main REPL editor + temporary confirmation editors creates conflicting signal handler state.
 
-This better simulates the real-world scenario:
+### Tokio-based Reproduction (Most Accurate)
+
+This closely simulates the actual kimichat multi-agent scenario:
 
 ```bash
 cargo run --bin rustyline_sigwinch_tokio_repro
 ```
 
-1. Program asks for confirmation using temporary `DefaultEditor`
-2. Answer 'y' and press Enter
-3. Editor is dropped, program enters tokio async execution
-4. **Resize your terminal window during the async sleep**
-5. Program panics from SIGWINCH handler while tokio runtime is parked
+1. Program creates main REPL with `DefaultEditor`
+2. Type `run` to start an agent task
+3. Agent creates **nested temporary editors** for tool confirmations
+4. Answer `y` to each confirmation (3 total)
+5. After each confirmation, agent returns to tokio async execution
+6. **Resize terminal window during agent processing (5-second countdown)**
+7. May panic from SIGWINCH handler while tokio runtime is parked
+
+This version is most likely to reproduce because:
+- Multiple nested editor creations
+- Active async execution between confirmations
+- Tokio runtime parking/waiting states
+- Exactly matches the kimichat usage pattern
 
 ## Panic Details
 
@@ -67,22 +78,48 @@ Key stack frames:
 
 ## Problematic Usage Pattern
 
-```rust
-// ❌ PROBLEMATIC: Creates temporary editor for simple prompt
-fn get_confirmation() -> bool {
-    let mut rl = DefaultEditor::new()?;
-    let response = rl.readline(">>> ")?;
-    response.trim() == "y"
-    // Editor dropped, but SIGWINCH handler still active!
-}
+The bug is most easily triggered with **nested editors**:
 
+```rust
+// ❌ PROBLEMATIC: Nested rustyline editors with async execution
+#[tokio::main]
 async fn main() {
-    if get_confirmation() {
-        // Now in async runtime with orphaned signal handler
-        do_async_work().await; // SIGWINCH during this = PANIC
+    // Main REPL editor
+    let mut main_rl = DefaultEditor::new()?;
+
+    loop {
+        let line = main_rl.readline(">>> ")?;
+
+        if line == "run_agent" {
+            run_agent_with_confirmations().await; // ← Window resize during this = PANIC
+        }
     }
 }
+
+async fn run_agent_with_confirmations() {
+    // Agent does work...
+
+    // Creates NESTED temporary editor for tool confirmation
+    if get_tool_confirmation() {
+        // Nested editor dropped, back in tokio async context
+        do_tool_work().await; // ← SIGWINCH here can panic
+    }
+}
+
+fn get_tool_confirmation() -> bool {
+    let mut rl = DefaultEditor::new()?; // ← NESTED editor!
+    let response = rl.readline("Execute? >>> ")?;
+    response.trim() == "y"
+    // Nested editor dropped, but signal handlers may conflict with main editor
+}
 ```
+
+**Why nesting matters:**
+1. Main REPL editor registers SIGWINCH handler
+2. Nested editor may register another handler or interfere with the first
+3. When nested editor drops, signal handler state is inconsistent
+4. Window resize fires handler with invalid/conflicting FD state
+5. Panic in signal handler context → abort
 
 ## Workaround
 
