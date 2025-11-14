@@ -40,6 +40,7 @@ KimiChat operates in two modes:
 **Specialized Agents:**
 - `planner` - Task decomposition and agent assignment (NO tool access, dynamically discovers available agents)
 - `code_analyzer` - Code analysis and architecture review
+- `code_reviewer` - Code review with mandatory skill-based workflows (quality assurance)
 - `file_manager` - File operations (read, write, edit)
 - `search_specialist` - Search and discovery across codebase
 - `system_operator` - Command execution, builds, and batch operations
@@ -59,7 +60,7 @@ The system uses a single configurable agent implementation (`ConfigurableAgent`)
 **Tool Registry:**
 - Central registry (`src/core/tool_registry.rs`)
 - Tools implement `Tool` trait
-- Categories: file_ops, search, system, model_management, agent_control
+- Categories: file_ops, search, system, model_management, agent_control, skills
 
 **Agent Factory:**
 - Creates agents from JSON configurations
@@ -70,6 +71,142 @@ The system uses a single configurable agent implementation (`ConfigurableAgent`)
 - Tracks task execution hierarchically
 - Shows task progress and agent assignments
 - Phases: Planning → AgentSelection → TaskExecution → Aggregation → Completed
+
+**Skills System:**
+- Proven workflows and best practices as reusable templates
+- Skills are MANDATORY when available (following superpowers philosophy)
+- Dynamic skill discovery from `skills/` directory
+- Three access patterns: tools, slash commands, and session hooks
+- Enforced through agent system prompts and session initialization
+
+## Skills System Architecture
+
+KimiChat includes a comprehensive skills system inspired by [obra/superpowers](https://github.com/obra/superpowers). Skills are proven workflows and best practices that agents MUST follow when applicable.
+
+### Philosophy
+
+**Skills are MANDATORY, not optional.** When a skill exists for a task:
+- Agents MUST check for relevant skills before starting work
+- Agents MUST load and follow applicable skills exactly as written
+- Skipping or improvising instead of following skills is prohibited
+
+This enforces battle-tested workflows and prevents agents from "winging it" on complex tasks.
+
+### Skills Directory Structure
+
+```
+skills/
+├── test-driven-development/
+│   └── SKILL.md              # TDD workflow for all code changes
+├── systematic-debugging/
+│   └── SKILL.md              # Structured debugging process
+├── writing-plans/
+│   └── SKILL.md              # Creating implementation plans
+├── executing-plans/
+│   └── SKILL.md              # Executing plans with checkpoints
+├── brainstorming/
+│   └── SKILL.md              # Socratic method for design refinement
+├── requesting-code-review/
+│   └── SKILL.md              # How to perform code reviews
+├── receiving-code-review/
+│   └── SKILL.md              # How to respond to review feedback
+├── using-superpowers/
+│   └── SKILL.md              # Meta-skill explaining skill usage
+└── ... (20+ total skills)
+```
+
+Each `SKILL.md` contains:
+- YAML frontmatter (name, description)
+- Detailed workflow instructions
+- Examples and best practices
+- Decision trees and checklists
+
+### Three Ways to Use Skills
+
+**1. Tool-Based Access (Agents)**
+
+All agents have access to three skill tools:
+- `load_skill` - Load and read a specific skill by name
+- `list_skills` - List all available skills
+- `find_relevant_skills` - Search for skills matching a task description
+
+Agents are instructed in their system prompts to ALWAYS check for relevant skills before starting work.
+
+**2. Slash Commands (Users)**
+
+Interactive REPL provides direct skill invocation:
+- `/brainstorm` - Launch brainstorming skill for design refinement
+- `/write-plan` - Create detailed implementation plan
+- `/execute-plan` - Execute plan with review checkpoints
+- `/skills` - Show available skill commands
+
+These inject the skill as a system message, making it active for the current conversation.
+
+**3. Session Hook (Automatic)**
+
+The `hooks/session-start.sh` script runs at REPL startup and injects the `using-superpowers` skill as foundational context. This ensures agents understand the skills system from the beginning of every session.
+
+### Implementation Details
+
+**SkillRegistry** (`src/skills/mod.rs`):
+- Loads all `SKILL.md` files from `skills/` directory
+- Parses YAML frontmatter for metadata
+- Provides lookup and relevance matching
+- Shared across all agents via `Arc<SkillRegistry>`
+
+**Context Propagation:**
+```
+KimiChat.skill_registry (Arc<SkillRegistry>)
+  → ExecutionContext.skill_registry
+  → ToolContext.skill_registry
+  → Skill Tools (load_skill, etc.)
+```
+
+**Mandatory Enforcement:**
+
+All agent system prompts include:
+```
+═══════════════════════════════════════════════════════════════
+🎯 MANDATORY SKILL USAGE
+═══════════════════════════════════════════════════════════════
+
+BEFORE starting ANY task, you MUST:
+1. Use find_relevant_skills to check for applicable skills
+2. If relevant skills found, use load_skill to read them
+3. Follow the skill exactly as written - NO exceptions
+4. Announce: "I'm using the [skill-name] skill to [what you're doing]"
+
+IF A SKILL EXISTS FOR YOUR TASK, USING IT IS MANDATORY. Not optional.
+```
+
+### Skill-Based Agents
+
+Some agents are specifically designed around skills:
+
+**code_reviewer** (`agents/configs/code_reviewer.json`):
+- Mandatory use of `requesting-code-review` and `receiving-code-review` skills
+- Reviews code against plans and quality standards
+- Structured output: Strengths, Issues (Critical/Important/Minor), Assessment
+- Clear verdict: Ready to merge / With fixes / Needs work
+
+Add new skill-based agents by:
+1. Creating agent config in `agents/configs/`
+2. Specifying required skills in system prompt
+3. Including skill tools in tools array
+4. Agent auto-discovered by planner
+
+### Available Skills
+
+Core skills ported from superpowers:
+- **Development Workflows**: test-driven-development, subagent-driven-development
+- **Planning**: writing-plans, executing-plans, brainstorming
+- **Debugging**: systematic-debugging, root-cause-tracing
+- **Quality**: requesting-code-review, receiving-code-review, verification-before-completion
+- **Architecture**: planning-architectural-changes, planning-migrations
+- **Process**: working-iteratively, using-git-history, rubber-duck-debugging
+- And 10+ more...
+
+Each skill is a battle-tested workflow that prevents common mistakes and ensures thorough execution.
 
 ## Project Structure
 
@@ -90,7 +227,8 @@ src/
 │   ├── file_ops.rs      # File operations with confirmations
 │   ├── search.rs        # Code search
 │   ├── system.rs        # Command execution
-│   └── iteration_control.rs # Dynamic iteration requests
+│   ├── iteration_control.rs # Dynamic iteration requests
+│   └── skill_tools.rs   # Skill loading and discovery (load_skill, list_skills, find_relevant_skills)
 ├── terminal/            # PTY/terminal session management
 │   ├── session.rs       # Terminal session with background reader
 │   ├── manager.rs       # Multi-session management
@@ -99,7 +237,26 @@ src/
 │   ├── tools.rs         # 11 PTY tool implementations
 │   └── logger.rs        # Session logging
 ├── models/              # Data structures and types
-└── logging/             # Request/response logging (JSONL format)
+├── logging/             # Request/response logging (JSONL format)
+└── skills/              # Skills system (SkillRegistry, Skill struct)
+```
+
+### Skills and Hooks
+
+```
+skills/                  # Proven workflows and best practices (20+ skills)
+├── test-driven-development/
+├── systematic-debugging/
+├── writing-plans/
+├── executing-plans/
+├── brainstorming/
+├── requesting-code-review/
+├── receiving-code-review/
+├── using-superpowers/
+└── ... (more skills)
+
+hooks/                   # Session lifecycle hooks
+└── session-start.sh     # Injects skill context at REPL startup
 ```
 
 ### Multi-Agent System (used only with `--agents`)
@@ -117,6 +274,7 @@ src/agents/
 agents/configs/          # Agent configurations (JSON)
 ├── planner.json         # Task planning and decomposition
 ├── code_analyzer.json   # Code analysis and architecture
+├── code_reviewer.json   # Code review with skill-based workflows
 ├── file_manager.json    # File operations
 ├── search_specialist.json # Code search and discovery
 ├── system_operator.json # Command execution
@@ -251,6 +409,15 @@ cargo run -- --llama-cpp-url http://localhost:8080 -i
 - PTY sessions use background reader threads for continuous screen buffer updates
 - Loop detection distinguishes between consecutive and scattered repeats
 - Read-only tools (file reads, searches) allowed more repetitions than write operations
+
+**Skills system:**
+- All agents have mandatory skill checking in their system prompts
+- Skills loaded dynamically from `skills/` directory on startup
+- Three access patterns: agent tools, user slash commands, session hooks
+- Session hook (`hooks/session-start.sh`) injects using-superpowers skill at startup
+- Skills are MANDATORY when available (not optional suggestions)
+- SkillRegistry shared across all agents via Arc for efficient access
+- Slash commands: `/brainstorm`, `/write-plan`, `/execute-plan`, `/skills`
 
 **Multi-agent mode specific:**
 - Planner agent is used only for planning, not execution (has no tools)
