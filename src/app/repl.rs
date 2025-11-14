@@ -163,6 +163,26 @@ pub async fn run_repl_mode(
         chat.messages.push(sys_msg);
     }
 
+    // Set up a persistent Ctrl-C handler for the entire REPL session
+    // This holds the current operation's cancellation token
+    let current_token: std::sync::Arc<std::sync::Mutex<Option<tokio_util::sync::CancellationToken>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let current_token_for_handler = current_token.clone();
+
+    // Spawn a single Ctrl-C handler that will last the entire session
+    tokio::spawn(async move {
+        loop {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                if let Ok(guard) = current_token_for_handler.lock() {
+                    if let Some(ref token) = *guard {
+                        println!("\n{}", "^C - Interrupting...".bright_yellow());
+                        token.cancel();
+                    }
+                }
+            }
+        }
+    });
+
     loop {
         let model_indicator = format!("[{}]", chat.current_model.display_name()).bright_magenta();
         let readline = rl.readline(&format!("{} {} ", model_indicator, "You:".bright_green().bold()));
@@ -421,21 +441,21 @@ pub async fn run_repl_mode(
                 let response = if chat.use_agents && chat.agent_coordinator.is_some() {
                     // Create cancellation token for this agent request
                     let cancel_token = tokio_util::sync::CancellationToken::new();
-                    let cancel_token_clone = cancel_token.clone();
 
-                    // Set up Ctrl-C handler for agent mode
-                    let ctrl_c_task = tokio::spawn(async move {
-                        if let Ok(_) = tokio::signal::ctrl_c().await {
-                            println!("\n{}", "^C - Interrupting agent execution...".bright_yellow());
-                            cancel_token_clone.cancel();
-                        }
-                    });
+                    // Register this token with the persistent Ctrl-C handler
+                    {
+                        let mut guard = current_token.lock().unwrap();
+                        *guard = Some(cancel_token.clone());
+                    }
 
                     // Use agent system with cancellation support
                     let result = chat.process_with_agents(line, Some(cancel_token.clone())).await;
 
-                    // Clean up signal handler
-                    ctrl_c_task.abort();
+                    // Clear the current token after operation completes
+                    {
+                        let mut guard = current_token.lock().unwrap();
+                        *guard = None;
+                    }
 
                     match result {
                         Ok(response) => response,
@@ -462,20 +482,20 @@ pub async fn run_repl_mode(
                 } else {
                     // Use regular chat with cancellation support
                     let cancel_token = tokio_util::sync::CancellationToken::new();
-                    let cancel_token_clone = cancel_token.clone();
 
-                    // Set up Ctrl-C handler for single-agent mode
-                    let ctrl_c_task = tokio::spawn(async move {
-                        if let Ok(_) = tokio::signal::ctrl_c().await {
-                            println!("\n{}", "^C - Interrupting...".bright_yellow());
-                            cancel_token_clone.cancel();
-                        }
-                    });
+                    // Register this token with the persistent Ctrl-C handler
+                    {
+                        let mut guard = current_token.lock().unwrap();
+                        *guard = Some(cancel_token.clone());
+                    }
 
                     let result = crate::chat::session::chat(&mut chat, line, Some(cancel_token.clone())).await;
 
-                    // Clean up signal handler
-                    ctrl_c_task.abort();
+                    // Clear the current token after operation completes
+                    {
+                        let mut guard = current_token.lock().unwrap();
+                        *guard = None;
+                    }
 
                     match result {
                         Ok(response) => response,
