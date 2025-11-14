@@ -141,28 +141,113 @@ impl SkillRegistry {
     }
 
     /// Find skills relevant to a given task description
-    /// Returns list of skill names that might apply
+    /// Returns list of skill names that might apply, sorted by relevance score
     pub fn find_relevant_skills(&self, task_description: &str) -> Vec<String> {
         let task_lower = task_description.to_lowercase();
-        let mut relevant = Vec::new();
 
-        for (name, skill) in &self.skills {
-            let desc_lower = skill.description.to_lowercase();
+        // Extract meaningful words from task (filter out common stop words)
+        let stop_words = ["the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+                          "of", "with", "by", "from", "as", "is", "was", "are", "were", "be",
+                          "have", "has", "had", "do", "does", "did", "will", "would", "should",
+                          "could", "may", "might", "must", "can", "this", "that", "these", "those",
+                          "i", "you", "we", "they", "it", "he", "she", "my", "your", "our", "their"];
 
-            // Check for keyword matches
-            if task_lower.contains("test") && (name.contains("test") || desc_lower.contains("test")) {
-                relevant.push(name.clone());
-            } else if task_lower.contains("debug") && (name.contains("debug") || desc_lower.contains("debug")) {
-                relevant.push(name.clone());
-            } else if task_lower.contains("plan") && (name.contains("plan") || desc_lower.contains("plan")) {
-                relevant.push(name.clone());
-            } else if task_lower.contains("review") && (name.contains("review") || desc_lower.contains("review")) {
-                relevant.push(name.clone());
-            }
-            // Add more heuristics as needed
+        let task_words: Vec<&str> = task_lower
+            .split(|c: char| !c.is_alphanumeric() && c != '-')
+            .filter(|w| w.len() > 2 && !stop_words.contains(w))
+            .collect();
+
+        if task_words.is_empty() {
+            return Vec::new();
         }
 
-        relevant
+        // Score each skill based on relevance
+        let mut scored_skills: Vec<(String, f32)> = Vec::new();
+
+        for (name, skill) in &self.skills {
+            let mut score = 0.0;
+
+            let name_lower = name.to_lowercase();
+            let desc_lower = skill.description.to_lowercase();
+
+            // Extract words from skill name and description
+            let skill_words: Vec<String> = format!("{} {}", name_lower, desc_lower)
+                .split(|c: char| !c.is_alphanumeric() && c != '-')
+                .filter(|w| w.len() > 2 && !stop_words.contains(w))
+                .map(|s| s.to_string())
+                .collect();
+
+            // Score based on word overlap
+            for task_word in &task_words {
+                for skill_word in &skill_words {
+                    if task_word == skill_word {
+                        // Exact match
+                        score += 10.0;
+                    } else if task_word.contains(skill_word) || skill_word.contains(task_word) {
+                        // Partial match (e.g., "debugging" contains "debug")
+                        score += 5.0;
+                    } else if Self::similar_words(task_word, skill_word) {
+                        // Similar words (common root/stem)
+                        score += 3.0;
+                    }
+                }
+            }
+
+            // Bonus for name matches (skill name is more important than description)
+            for task_word in &task_words {
+                if name_lower.contains(task_word) {
+                    score += 15.0;
+                }
+            }
+
+            // Only include skills with a minimum relevance score
+            if score > 8.0 {
+                scored_skills.push((name.clone(), score));
+            }
+        }
+
+        // Sort by score (descending) and return skill names
+        scored_skills.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Return top 5 most relevant skills
+        scored_skills.into_iter()
+            .take(5)
+            .map(|(name, _)| name)
+            .collect()
+    }
+
+    /// Check if two words are similar (common patterns for related words)
+    fn similar_words(word1: &str, word2: &str) -> bool {
+        // Check for common verb forms (e.g., "test" and "testing")
+        if word1.len() > 4 && word2.len() > 4 {
+            let min_len = word1.len().min(word2.len());
+            let common_prefix = word1.chars().zip(word2.chars())
+                .take_while(|(a, b)| a == b)
+                .count();
+
+            // If they share at least 70% of the shorter word, consider them similar
+            if common_prefix >= (min_len * 7) / 10 {
+                return true;
+            }
+        }
+
+        // Check for common word endings that indicate related concepts
+        let endings = [
+            ("ing", ""), ("ed", ""), ("s", ""),
+            ("tion", "te"), ("ment", ""), ("ness", ""),
+        ];
+
+        for (ending1, ending2) in &endings {
+            if word1.ends_with(ending1) && word2.ends_with(ending2) {
+                let stem1 = &word1[..word1.len() - ending1.len()];
+                let stem2 = &word2[..word2.len() - ending2.len()];
+                if stem1 == stem2 {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 }
 
