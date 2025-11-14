@@ -52,12 +52,13 @@ impl ToolContext {
     }
 
     /// Check if an action is permitted by the policy
+    /// Returns (approved: bool, rejection_reason: Option<String>)
     pub fn check_permission(
         &self,
         action: crate::policy::ActionType,
         target: &str,
         prompt_message: &str,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<(bool, Option<String>)> {
         use crate::policy::Decision;
         use colored::Colorize;
         use rustyline::DefaultEditor;
@@ -65,8 +66,8 @@ impl ToolContext {
         let decision = self.policy_manager.evaluate(&action, target);
 
         match decision {
-            Decision::Allow => Ok(true),
-            Decision::Deny => Ok(false),
+            Decision::Allow => Ok((true, None)),
+            Decision::Deny => Ok((false, Some("Denied by policy".to_string()))),
             Decision::Ask => {
                 // Ask the user for confirmation
                 println!("\n{}", prompt_message.bright_green().bold());
@@ -77,16 +78,35 @@ impl ToolContext {
                 let response = rl.readline(">>> ")
                     .map_err(|_| anyhow::anyhow!("Cancelled by user"))?;
 
-                let response = response.trim().to_lowercase();
-                let approved = response.is_empty() || response == "y" || response == "yes";
+                let response = response.trim();
+                let response_lower = response.to_lowercase();
+                let approved = response_lower.is_empty() || response_lower == "y" || response_lower == "yes";
+
+                let rejection_reason = if !approved {
+                    // Ask for reason if rejected
+                    println!("{}", "Why not? (optional - helps the AI understand):".bright_yellow());
+                    match rl.readline(">>> ") {
+                        Ok(reason) => {
+                            let reason = reason.trim();
+                            if reason.is_empty() {
+                                None
+                            } else {
+                                Some(reason.to_string())
+                            }
+                        }
+                        Err(_) => None,
+                    }
+                } else {
+                    None
+                };
 
                 // Learn from the user's decision if learning is enabled
                 if self.policy_manager.is_learning() {
                     let decision = if approved { Decision::Allow } else { Decision::Deny };
-                    let _ = self.policy_manager.learn(action, target.to_string(), decision);
+                    let _ = self.policy_manager.learn(action, target.to_string(), decision, rejection_reason.clone());
                 }
 
-                Ok(approved)
+                Ok((approved, rejection_reason))
             }
         }
     }

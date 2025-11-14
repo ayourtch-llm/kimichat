@@ -50,17 +50,22 @@ impl Tool for RunCommandTool {
         print!("{} {} ", "Run command:".yellow(), command.cyan());
         std::io::stdout().flush().ok();
 
-        let approved = match context.check_permission(
+        let (approved, rejection_reason) = match context.check_permission(
             crate::policy::ActionType::CommandExecution,
             &command,
             "Execute? (y/N):"
         ) {
-            Ok(approved) => approved,
+            Ok((approved, reason)) => (approved, reason),
             Err(e) => return ToolResult::error(format!("Permission check failed: {}", e)),
         };
 
         if !approved {
-            return ToolResult::error("Command cancelled by user or policy".to_string());
+            let error_msg = if let Some(reason) = rejection_reason {
+                format!("Command cancelled by user: {}", reason)
+            } else {
+                "Command cancelled by user or policy".to_string()
+            };
+            return ToolResult::error(error_msg);
         }
 
         println!("{} {}", "Running:".green(), command.cyan());

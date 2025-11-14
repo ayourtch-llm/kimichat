@@ -284,12 +284,12 @@ impl Tool for EditFileTool {
         }
 
         // Check permission using policy system
-        let approved = match context.check_permission(
+        let (approved, rejection_reason) = match context.check_permission(
             crate::policy::ActionType::FileEdit,
             &file_path,
             "Apply these changes? [Y/n]"
         ) {
-            Ok(approved) => approved,
+            Ok((approved, reason)) => (approved, reason),
             Err(e) => return ToolResult::error(format!("Permission check failed: {}", e)),
         };
 
@@ -300,7 +300,12 @@ impl Tool for EditFileTool {
                 Err(e) => ToolResult::error(format!("Failed to write file: {}", e)),
             }
         } else {
-            ToolResult::error("Edit cancelled by user or policy".to_string())
+            let error_msg = if let Some(reason) = rejection_reason {
+                format!("Edit cancelled by user: {}", reason)
+            } else {
+                "Edit cancelled by user or policy".to_string()
+            };
+            ToolResult::error(error_msg)
         }
     }
 }

@@ -242,7 +242,7 @@ impl PolicyManager {
     }
 
     /// Learn from a user decision (saves to policy file if in learn mode)
-    pub fn learn(&self, action: ActionType, target: String, decision: Decision) -> Result<()> {
+    pub fn learn(&self, action: ActionType, target: String, decision: Decision, reason: Option<String>) -> Result<()> {
         if !self.learn_mode {
             return Ok(());
         }
@@ -255,18 +255,31 @@ impl PolicyManager {
         }
 
         // Create a new rule based on the user's decision
+        let description = if let Some(ref reason_text) = reason {
+            format!("Learned from user decision: {}", reason_text)
+        } else {
+            "Learned from user decision".to_string()
+        };
+
         let rule = PolicyRule::new(action.clone(), target.clone(), decision.clone())
-            .with_description(format!("Learned from user decision"));
+            .with_description(description);
 
         config.add_rule(rule);
 
         // Save to file if we have a policy file path
         if let Some(ref path) = self.policy_file {
             config.save_to_file(path)?;
-            eprintln!(
-                "📚 Learned policy: {} {} -> {}",
-                action, target, decision
-            );
+            if let Some(reason_text) = reason {
+                eprintln!(
+                    "📚 Learned policy: {} {} -> {} (reason: {})",
+                    action, target, decision, reason_text
+                );
+            } else {
+                eprintln!(
+                    "📚 Learned policy: {} {} -> {}",
+                    action, target, decision
+                );
+            }
         }
 
         Ok(())
