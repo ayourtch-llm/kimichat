@@ -26,7 +26,7 @@ pub async fn run_repl_mode(
         println!("{}", "🚀 Multi-Agent System ENABLED - Specialized agents will handle your tasks".green().bold());
     }
 
-    println!("{}", "Type 'exit' or 'quit' to exit\n".bright_black());
+    println!("{}", "Type 'exit' or 'quit' to exit, or '/skills' to see available skill commands\n".bright_black());
 
     let mut chat = KimiChat::new_with_config(
         client_config,
@@ -295,6 +295,118 @@ pub async fn run_repl_mode(
                         Err(_) => {
                             eprintln!("{} Invalid session ID: '{}'. Use a number.", "❌".bright_red(), id_str);
                         }
+                    }
+                    continue;
+                }
+
+                // Handle /skills command to show available skill commands
+                if line == "/skills" || line == "/skills help" {
+                    println!("{} Skill Commands:", "🎯".bright_cyan());
+                    println!("  /brainstorm             - Use brainstorming skill for interactive design refinement");
+                    println!("  /write-plan             - Use writing-plans skill to create detailed implementation plan");
+                    println!("  /execute-plan           - Use executing-plans skill to execute plan with checkpoints");
+                    println!("  /skills help            - Show this help");
+                    continue;
+                }
+
+                // Handle /brainstorm command
+                if line == "/brainstorm" {
+                    if let Some(ref skill_registry) = chat.skill_registry {
+                        match skill_registry.get_skill("brainstorming") {
+                            Some(skill) => {
+                                let skill_msg = Message {
+                                    role: "system".to_string(),
+                                    content: format!(
+                                        "<skill_invocation>\n🎯 USING SKILL: {}\n\n{}\n\n**YOU MUST follow this skill exactly as written.**\n</skill_invocation>",
+                                        skill.name, skill.content
+                                    ),
+                                    tool_calls: None,
+                                    tool_call_id: None,
+                                    name: None,
+                                };
+                                chat.messages.push(skill_msg.clone());
+
+                                if let Some(logger) = &mut chat.logger {
+                                    logger.log("system", &skill_msg.content, None, false).await;
+                                }
+
+                                println!("{} {} Brainstorming skill activated! 🎯", "✓".bright_green(), "Skill:".bright_cyan());
+                                println!("{}", "Ask your question or describe what you want to brainstorm about.".bright_black());
+                            }
+                            None => {
+                                eprintln!("{} Brainstorming skill not found. Ensure skills/ directory contains brainstorming/SKILL.md", "❌".bright_red());
+                            }
+                        }
+                    } else {
+                        eprintln!("{} Skill registry not available", "❌".bright_red());
+                    }
+                    continue;
+                }
+
+                // Handle /write-plan command
+                if line == "/write-plan" {
+                    if let Some(ref skill_registry) = chat.skill_registry {
+                        match skill_registry.get_skill("writing-plans") {
+                            Some(skill) => {
+                                let skill_msg = Message {
+                                    role: "system".to_string(),
+                                    content: format!(
+                                        "<skill_invocation>\n🎯 USING SKILL: {}\n\n{}\n\n**YOU MUST follow this skill exactly as written.**\n</skill_invocation>",
+                                        skill.name, skill.content
+                                    ),
+                                    tool_calls: None,
+                                    tool_call_id: None,
+                                    name: None,
+                                };
+                                chat.messages.push(skill_msg.clone());
+
+                                if let Some(logger) = &mut chat.logger {
+                                    logger.log("system", &skill_msg.content, None, false).await;
+                                }
+
+                                println!("{} {} Writing-plans skill activated! 📋", "✓".bright_green(), "Skill:".bright_cyan());
+                                println!("{}", "Describe what you want to plan and I'll create a detailed implementation plan.".bright_black());
+                            }
+                            None => {
+                                eprintln!("{} Writing-plans skill not found. Ensure skills/ directory contains writing-plans/SKILL.md", "❌".bright_red());
+                            }
+                        }
+                    } else {
+                        eprintln!("{} Skill registry not available", "❌".bright_red());
+                    }
+                    continue;
+                }
+
+                // Handle /execute-plan command
+                if line == "/execute-plan" {
+                    if let Some(ref skill_registry) = chat.skill_registry {
+                        match skill_registry.get_skill("executing-plans") {
+                            Some(skill) => {
+                                let skill_msg = Message {
+                                    role: "system".to_string(),
+                                    content: format!(
+                                        "<skill_invocation>\n🎯 USING SKILL: {}\n\n{}\n\n**YOU MUST follow this skill exactly as written.**\n</skill_invocation>",
+                                        skill.name, skill.content
+                                    ),
+                                    tool_calls: None,
+                                    tool_call_id: None,
+                                    name: None,
+                                };
+                                chat.messages.push(skill_msg.clone());
+
+                                if let Some(logger) = &mut chat.logger {
+                                    logger.log("system", &skill_msg.content, None, false).await;
+                                }
+
+                                println!("{} {} Executing-plans skill activated! 🚀", "✓".bright_green(), "Skill:".bright_cyan());
+                                println!("{}", "I'll execute the plan in batches with review checkpoints.".bright_black());
+                            }
+                            None => {
+                                eprintln!("{} Executing-plans skill not found. Ensure skills/ directory contains executing-plans/SKILL.md", "❌".bright_red());
+                            }
+                        }
+                    } else {
+                        eprintln!("{} Skill registry not available", "❌".bright_red());
                     }
                     continue;
                 }
