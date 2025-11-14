@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs;
 use colored::Colorize;
+use chrono;
 
 /// Tool for opening files with optional line range
 pub struct OpenFileTool;
@@ -227,6 +228,33 @@ impl Tool for EditFileTool {
 
         // Check if old content exists
         if !current_content.contains(&old_content) {
+            // Log the failure for debugging
+            let log_entry = serde_json::json!({
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "error": "old_content_not_found",
+                "file_path": file_path,
+                "old_content": old_content,
+                "new_content": new_content,
+                "current_file_contents": current_content,
+                "old_content_length": old_content.len(),
+                "current_content_length": current_content.len(),
+            });
+
+            // Create logs directory if it doesn't exist
+            let log_dir = context.work_dir.join("logs");
+            if let Err(e) = fs::create_dir_all(&log_dir) {
+                eprintln!("Warning: Failed to create log directory: {}", e);
+            } else {
+                // Write to a timestamped log file
+                let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%3f");
+                let log_file = log_dir.join(format!("edit_failure_{}.json", timestamp));
+
+                match fs::write(&log_file, serde_json::to_string_pretty(&log_entry).unwrap_or_else(|_| log_entry.to_string())) {
+                    Ok(_) => eprintln!("Edit failure logged to: {}", log_file.display()),
+                    Err(e) => eprintln!("Warning: Failed to write edit failure log: {}", e),
+                }
+            }
+
             return ToolResult::error(format!("Old content not found in file: {}", file_path));
         }
 
