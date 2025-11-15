@@ -200,6 +200,7 @@ impl SessionManager {
         );
 
         kimichat.current_model = model;
+        kimichat.non_interactive = true; // Web sessions should not prompt for input
 
         // Create session
         let session = Arc::new(Session::new(

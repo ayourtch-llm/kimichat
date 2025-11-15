@@ -17,6 +17,7 @@ use crate::todo::TodoManager;
 /// - Terminal manager for PTY session management
 /// - Skill registry for accessing skills
 /// - Todo manager for task tracking
+/// - Non-interactive flag for web/API mode
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub work_dir: PathBuf,
@@ -26,6 +27,7 @@ pub struct ToolContext {
     pub terminal_manager: Option<Arc<Mutex<TerminalManager>>>,
     pub skill_registry: Option<Arc<SkillRegistry>>,
     pub todo_manager: Option<Arc<TodoManager>>,
+    pub non_interactive: bool,
 }
 
 impl ToolContext {
@@ -38,7 +40,13 @@ impl ToolContext {
             terminal_manager: None,
             skill_registry: None,
             todo_manager: None,
+            non_interactive: false,
         }
+    }
+
+    pub fn with_non_interactive(mut self, non_interactive: bool) -> Self {
+        self.non_interactive = non_interactive;
+        self
     }
 
     pub fn with_env(mut self, key: String, value: String) -> Self {

@@ -273,42 +273,49 @@ impl Tool for ApplyEditPlanTool {
 
         println!("{}", "═".repeat(60).bright_black());
 
-        // Ask for confirmation
-        println!("\n{}", "Apply all these changes? [Y/n]".bright_green().bold());
+        // Check if we need to ask for confirmation
+        // In non-interactive mode (web/API), skip prompt - already confirmed via web UI
+        if !context.non_interactive {
+            // Ask for confirmation in interactive mode
+            println!("\n{}", "Apply all these changes? [Y/n]".bright_green().bold());
 
-        let mut rl = match DefaultEditor::new() {
-            Ok(rl) => rl,
-            Err(e) => return ToolResult::error(format!("Failed to create readline editor: {}", e)),
-        };
+            let mut rl = match DefaultEditor::new() {
+                Ok(rl) => rl,
+                Err(e) => return ToolResult::error(format!("Failed to create readline editor: {}", e)),
+            };
 
-        let response = match rl.readline(">>> ") {
-            Ok(resp) => resp,
-            Err(_) => {
-                clear_edit_plan(&context.work_dir);
-                return ToolResult::error("Edit plan application cancelled by user".to_string());
+            let response = match rl.readline(">>> ") {
+                Ok(resp) => resp,
+                Err(_) => {
+                    clear_edit_plan(&context.work_dir);
+                    return ToolResult::error("Edit plan application cancelled by user".to_string());
+                }
+            };
+
+            let response = response.trim().to_lowercase();
+
+            match response.as_str() {
+                "" | "y" | "yes" => {
+                    // Continue with applying edits
+                    println!("\n{}", "Applying edits...".green());
+                }
+                _ => {
+                    // Cancelled - ask for optional feedback
+                    println!("{}", "Would you like to provide feedback to the model about why you rejected this? (optional)".bright_yellow());
+                    println!("{}", "Press Enter to skip, or type your feedback:".bright_black());
+
+                    let feedback = match rl.readline("") {
+                        Ok(fb) if !fb.trim().is_empty() => format!(" - {}", fb.trim()),
+                        _ => String::new(),
+                    };
+
+                    clear_edit_plan(&context.work_dir);
+                    return ToolResult::error(format!("Edit plan application cancelled by user{}", feedback));
+                }
             }
-        };
-
-        let response = response.trim().to_lowercase();
-
-        match response.as_str() {
-            "" | "y" | "yes" => {
-                // Continue with applying edits
-                println!("\n{}", "Applying edits...".green());
-            }
-            _ => {
-                // Cancelled - ask for optional feedback
-                println!("{}", "Would you like to provide feedback to the model about why you rejected this? (optional)".bright_yellow());
-                println!("{}", "Press Enter to skip, or type your feedback:".bright_black());
-
-                let feedback = match rl.readline("") {
-                    Ok(fb) if !fb.trim().is_empty() => format!(" - {}", fb.trim()),
-                    _ => String::new(),
-                };
-
-                clear_edit_plan(&context.work_dir);
-                return ToolResult::error(format!("Edit plan application cancelled by user{}", feedback));
-            }
+        } else {
+            // Non-interactive mode - auto-confirm (already confirmed via web UI)
+            println!("\n{}", "✓ Confirmed via web UI - Applying edits...".green());
         }
 
         // Apply all edits sequentially

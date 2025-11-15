@@ -76,6 +76,8 @@ pub(crate) struct KimiChat {
     pub(crate) terminal_manager: Arc<Mutex<TerminalManager>>,
     // Skill registry
     pub(crate) skill_registry: Option<Arc<skills::SkillRegistry>>,
+    // Non-interactive mode (web/API)
+    pub(crate) non_interactive: bool,
     // Todo manager for task tracking
     pub(crate) todo_manager: Arc<todo::TodoManager>,
     // Streaming mode
@@ -230,6 +232,7 @@ impl KimiChat {
             stream_responses,
             verbose,
             debug_level: 0, // Default debug level is 0 (off)
+            non_interactive: false, // Default to interactive mode
         };
 
         // Add system message to inform the model about capabilities
@@ -439,7 +442,8 @@ impl KimiChat {
                     self.policy_manager.clone()
                 )
                 .with_terminal_manager(self.terminal_manager.clone())
-                .with_todo_manager(self.todo_manager.clone());
+                .with_todo_manager(self.todo_manager.clone())
+                .with_non_interactive(self.non_interactive);
 
                 // Add skill registry if available
                 if let Some(ref registry) = self.skill_registry {
