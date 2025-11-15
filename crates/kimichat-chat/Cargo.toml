@@ -13,4 +13,12 @@ kimichat-policy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 anyhow = { workspace = true }
+chrono = { workspace = true }
+colored = { workspace = true }
+reqwest = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+async-stream = { workspace = true }
+regex = { workspace = true }

@@ -1,0 +1,487 @@
+use crate::agent::{Agent, ExecutionContext, LlmClient};
+use crate::agent_config::AgentConfig;
+// TODO: use crate::chat::history::// TODO: safe_truncate;
+use kimichat_tools::core::tool_registry::ToolRegistry;
+use anyhow::Result;
+use std::collections::HashMap;
+use std::sync::Arc;
+use colored::Colorize;
+
+/// Factory for creating agents from configuration
+pub struct AgentFactory {
+    tool_registry: Arc<ToolRegistry>,
+    llm_clients: HashMap<String, Arc<dyn LlmClient>>,
+    policy_manager: kimichat_policy::PolicyManager,
+}
+
+impl AgentFactory {
+    pub fn new(tool_registry: Arc<ToolRegistry>, policy_manager: kimichat_policy::PolicyManager) -> Self {
+        Self {
+            tool_registry,
+            llm_clients: HashMap::new(),
+            policy_manager,
+        }
+    }
+
+    pub fn register_llm_client(&mut self, model: String, client: Arc<dyn LlmClient>) {
+        self.llm_clients.insert(model, client);
+    }
+
+    pub fn create_agent(&self, config: &AgentConfig) -> Result<Box<dyn Agent>> {
+        // Validate configuration
+        config.validate()
+            .map_err(|e| anyhow::anyhow!("Invalid agent config: {}", e))?;
+
+        // Debug: Show what agent we're creating and what tools it should have
+        eprintln!("[DEBUG] Creating agent '{}' with {} tools: {:?}",
+                 config.name, config.tools.len(), config.tools);
+
+        // Get LLM client for this agent
+        let llm_client = self.llm_clients.get(&config.model)
+            .ok_or_else(|| anyhow::anyhow!("No LLM client available for model: {}", config.model))?
+            .clone();
+
+        // Create configurable agent
+        let agent = ConfigurableAgent::new(
+            config.clone(),
+            Arc::clone(&self.tool_registry),
+            llm_client,
+            self.policy_manager.clone(),
+        )?;
+
+        Ok(Box::new(agent))
+    }
+}
+
+/// Configurable agent implementation
+pub struct ConfigurableAgent {
+    config: AgentConfig,
+    tool_registry: Arc<ToolRegistry>,
+    llm_client: Arc<dyn LlmClient>,
+    policy_manager: kimichat_policy::PolicyManager,
+}
+
+impl ConfigurableAgent {
+    pub fn new(
+        config: AgentConfig,
+        tool_registry: Arc<ToolRegistry>,
+        llm_client: Arc<dyn LlmClient>,
+        policy_manager: kimichat_policy::PolicyManager,
+    ) -> Result<Self> {
+        // Validate that all required tools are available
+        for tool_name in &config.tools {
+            if !tool_registry.has_tool(tool_name) {
+                return Err(anyhow::anyhow!("Required tool '{}' not found in registry", tool_name));
+            }
+        }
+
+        Ok(Self {
+            config,
+            tool_registry,
+            llm_client,
+            policy_manager,
+        })
+    }
+
+    async fn execute_with_tools(
+        &self,
+        task: &crate::agent::Task,
+        context: &ExecutionContext,
+    ) -> crate::agent::AgentResult {
+        let start_time = std::time::Instant::now();
+
+        // Prepare tools for this agent
+        eprintln!("[DEBUG] Agent '{}' preparing tools from config.tools: {:?}",
+                 self.config.name, self.config.tools);
+
+        let available_tools: Vec<_> = self.config.tools
+            .iter()
+            .filter_map(|tool_name| {
+                let tool = self.tool_registry.get_tool(tool_name);
+                if tool.is_none() {
+                    eprintln!("[DEBUG] Tool '{}' not found in registry!", tool_name);
+                }
+                tool
+            })
+            .map(|tool| {
+                let openai_def = tool.to_openai_definition();
+                // Extract just the parameters schema from the full definition
+                let parameters = openai_def["function"]["parameters"].clone();
+
+                crate::agent::ToolDefinition {
+                    name: tool.name().to_string(),
+                    description: tool.description().to_string(),
+                    parameters,
+                }
+            })
+            .collect();
+
+        eprintln!("[DEBUG] Agent '{}' has {} available tools: {:?}",
+                 self.config.name,
+                 available_tools.len(),
+                 available_tools.iter().map(|t| &t.name).collect::<Vec<_>>());
+
+        eprintln!("[DEBUG] ═══ AGENT '{}' TOOLS SUMMARY ═══", self.config.name);
+        eprintln!("[DEBUG] Config tools: {:?}", self.config.tools);
+        eprintln!("[DEBUG] Available tools: {:?}", available_tools.iter().map(|t| &t.name).collect::<Vec<_>>());
+        eprintln!("[DEBUG] ════════════════════════════════════");
+
+        // Prepare conversation context with iteration management instructions
+        let enhanced_system_prompt = format!(
+            "{}\n\n\
+            ═══════════════════════════════════════════════════════════════\n\
+            📊 ITERATION MANAGEMENT (CRITICAL)\n\
+            ═══════════════════════════════════════════════════════════════\n\
+            You have a DEFAULT LIMIT of 50 iterations (tool call rounds).\n\n\
+            RULES:\n\
+            1. Use tools efficiently - each tool call consumes one iteration\n\
+            2. After 20-30 tool calls, you should be ready to provide your answer\n\
+            3. When you receive a warning about remaining iterations, you MUST:\n\
+               - STOP calling tools immediately\n\
+               - Provide your final answer based on information gathered\n\
+            4. If you genuinely need more iterations for complex tasks:\n\
+               - Use 'request_more_iterations' tool (if available)\n\
+               - Provide strong justification and progress summary\n\
+            5. Running out of iterations WITHOUT answering = FAILURE\n\n\
+            REMEMBER: Your goal is to ANSWER the user's question, not to \n\
+            explore endlessly. Be efficient and decisive.\n\
+            ═══════════════════════════════════════════════════════════════",
+            self.config.system_prompt
+        );
+
+        eprintln!("[DEBUG] Agent '{}' system prompt first 200 chars: {}...",
+                 self.config.name,
+                 &self.config.system_prompt.chars().take(200).collect::<String>());
+
+        let mut messages = vec![
+            crate::agent::ChatMessage {
+                role: "system".to_string(),
+                content: enhanced_system_prompt,
+                tool_calls: None,
+                tool_call_id: None,
+                name: None,
+                reasoning: None,
+            }
+        ];
+
+        // Add recent conversation history
+        messages.extend(context.conversation_history.iter().cloned());
+
+        // Add task description with explicit skill check reminder
+        // This forces agents to use the skills system proactively
+        let task_with_skill_reminder = format!(
+            "Task: {}\n\n\
+            ══════════════════════════════════════════════════════════════\n\
+            ⚠️  CRITICAL FIRST STEP: CHECK FOR APPLICABLE SKILLS\n\
+            ══════════════════════════════════════════════════════════════\n\n\
+            Your FIRST action MUST be:\n\
+            1. Call find_relevant_skills with this task description\n\
+            2. If relevant skills are found → use load_skill and follow them\n\
+            3. If no skills found → proceed with the task normally\n\n\
+            Skills are proven workflows that prevent common mistakes.\n\
+            Skipping the skill check will likely result in suboptimal work.\n\n\
+            Start by calling find_relevant_skills now.",
+            task.description
+        );
+
+        messages.push(crate::agent::ChatMessage {
+            role: "user".to_string(),
+            content: task_with_skill_reminder,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            reasoning: None,
+        });
+
+        // Execute with LLM and tool calling loop
+        let mut max_iterations = 50;
+        let mut iteration = 0;
+        loop {
+            // Check for cancellation at the start of each iteration
+            if let Some(ref token) = context.cancellation_token {
+                if token.is_cancelled() {
+                    eprintln!("[DEBUG] Agent '{}' iteration {} cancelled by user", self.config.name, iteration);
+                    let elapsed = start_time.elapsed();
+                    return crate::agent::AgentResult {
+                        success: false,
+                        content: "Task cancelled by user".to_string(),
+                        task_id: task.id.clone(),
+                        agent_name: self.config.name.clone(),
+                        execution_time: elapsed.as_millis() as u64,
+                        next_tasks: None,
+                        metadata: HashMap::new(),
+                    };
+                }
+            }
+
+            if iteration >= max_iterations {
+                break;
+            }
+
+            iteration += 1; // Increment at the start of each iteration
+            println!("{} Iteration {}/{}", "🔄".cyan(), iteration, max_iterations);
+
+            // Warn the model when approaching iteration limit
+            let mut current_messages = messages.clone();
+            if iteration >= max_iterations - 3 {
+                let remaining = max_iterations - iteration;
+                let urgency = if remaining <= 2 { "🚨 CRITICAL" } else { "⚠️ WARNING" };
+                current_messages.push(crate::agent::ChatMessage {
+                    role: "system".to_string(),
+                    content: format!(
+                        "{}: Only {} iteration(s) remain before maximum limit!\n\n\
+                        YOU MUST STOP CALLING TOOLS NOW.\n\
+                        Provide your final text response based on information already gathered.\n\
+                        If you call another tool, you may run out of iterations before providing an answer.\n\n\
+                        Summarize what you've found and answer the user's question NOW.",
+                        urgency, remaining
+                    ),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    name: None,
+                    reasoning: None,
+                });
+                println!("{} Injected iteration limit warning to model", "⚠️".yellow());
+            }
+
+            eprintln!("[DEBUG] Iteration {}: Calling LLM with {} tools: {:?}",
+                     iteration,
+                     available_tools.len(),
+                     available_tools.iter().map(|t| &t.name).collect::<Vec<_>>());
+
+            // Race LLM call against cancellation token
+            let llm_result = if let Some(ref token) = context.cancellation_token {
+                tokio::select! {
+                    result = self.llm_client.chat(current_messages.clone(), available_tools.clone()) => result,
+                    _ = token.cancelled() => {
+                        eprintln!("[DEBUG] LLM call interrupted by user (Ctrl-C)");
+                        let elapsed = start_time.elapsed();
+                        return crate::agent::AgentResult {
+                            success: false,
+                            content: "Task interrupted during LLM call".to_string(),
+                            task_id: task.id.clone(),
+                            agent_name: self.config.name.clone(),
+                            execution_time: elapsed.as_millis() as u64,
+                            next_tasks: None,
+                            metadata: HashMap::new(),
+                        };
+                    }
+                }
+            } else {
+                self.llm_client.chat(current_messages.clone(), available_tools.clone()).await
+            };
+
+            match llm_result {
+                Ok(response) => {
+                    // Check if LLM wants to call tools
+                    if let Some(tool_calls) = &response.message.tool_calls {
+                        println!("{} LLM requested {} tool call(s)", "🔧".yellow(), tool_calls.len());
+
+                        // Add assistant message with tool calls
+                        messages.push(response.message.clone());
+
+                        // Execute each tool call
+                        for tool_call in tool_calls {
+                            // Check for cancellation before each tool call
+                            if let Some(ref token) = context.cancellation_token {
+                                if token.is_cancelled() {
+                                    eprintln!("[DEBUG] Agent '{}' tool execution cancelled by user", self.config.name);
+                                    let elapsed = start_time.elapsed();
+                                    return crate::agent::AgentResult {
+                                        success: false,
+                                        content: "Task cancelled by user during tool execution".to_string(),
+                                        task_id: task.id.clone(),
+                                        agent_name: self.config.name.clone(),
+                                        execution_time: elapsed.as_millis() as u64,
+                                        next_tasks: None,
+                                        metadata: HashMap::new(),
+                                    };
+                                }
+                            }
+
+                            let tool_name = &tool_call.function.name;
+                            let tool_args = &tool_call.function.arguments;
+
+                            // Check if LLM is calling a tool that wasn't in available_tools
+                            let was_tool_available = available_tools.iter().any(|t| &t.name == tool_name);
+                            if !was_tool_available {
+                                eprintln!("[DEBUG] ⚠️  WARNING: Agent '{}' LLM tried to call tool '{}' which was NOT in available_tools list!",
+                                         self.config.name, tool_name);
+                                eprintln!("[DEBUG]    Available tools were: {:?}",
+                                         available_tools.iter().map(|t| &t.name).collect::<Vec<_>>());
+                            }
+
+                            println!("  {} Calling tool: {} with args: {}", "▶️".blue(), tool_name,
+                                if tool_args.chars().count() > 100 { format!("{}...", &tool_args[..100.min(tool_args.len())]) } else { tool_args.clone() });
+
+                            // Execute tool using registry
+                            eprintln!("[DEBUG] Agent '{}' executing tool '{}' (available in config: {})",
+                                     self.config.name,
+                                     tool_name,
+                                     self.config.tools.contains(&tool_name.to_string()));
+
+                            let tool_result = if let Some(tool) = self.tool_registry.get_tool(tool_name) {
+                                // Parse arguments and execute
+                                match kimichat_tools::core::ToolParameters::from_json(tool_args) {
+                                    Ok(params) => {
+                                        let mut tool_context = kimichat_tools::core::tool_context::ToolContext::new(
+                                            context.workspace_dir.clone(),
+                                            context.session_id.clone(),
+                                            self.policy_manager.clone(),
+                                        );
+                                        if let Some(ref tm) = context.terminal_manager {
+                                            tool_context = tool_context.with_terminal_manager(tm.clone());
+                                        }
+                                        if let Some(ref sr) = context.skill_registry {
+                                            tool_context = tool_context.with_skill_registry(sr.clone());
+                                        }
+                                // TODO:                                         if let Some(ref todo_mgr) = context.todo_manager {
+                                // TODO:                                             tool_context = tool_context.with_todo_manager(todo_mgr.clone());
+                                // TODO:                                         }
+                                        tool.execute(params, &tool_context).await
+                                    }
+                                    Err(e) => {
+                                        kimichat_tools::core::tool::ToolResult::error(format!("Failed to parse tool arguments: {}", e))
+                                    }
+                                }
+                            } else {
+                                kimichat_tools::core::tool::ToolResult::error(format!("Tool '{}' not found", tool_name))
+                            };
+
+                            let result_preview = if tool_result.success {
+                                if tool_result.content.chars().count() > 200 {
+                                    format!("{}...", &tool_result.content[..200.min(tool_result.content.len())])
+                                } else {
+                                    tool_result.content.clone()
+                                }
+                            } else {
+                                tool_result.error.clone().unwrap_or_else(|| "Unknown error".to_string())
+                            };
+                            println!("  {} Tool result: {}", if tool_result.success { "✅" } else { "❌" }, result_preview);
+
+                            // Check if this is a request_more_iterations tool call
+                            if tool_name == "request_more_iterations" && tool_result.success {
+                                // Parse the approval from the result
+                                if tool_result.content.contains("✅ APPROVED") {
+                                    // Extract the granted iterations from the result
+                                    if let Some(granted_str) = tool_result.content.split("APPROVED: ").nth(1) {
+                                        if let Some(num_str) = granted_str.split(" additional").next() {
+                                            if let Ok(additional) = num_str.trim().parse::<usize>() {
+                                                max_iterations += additional;
+                                                println!("{} Granted {} additional iterations. New limit: {}",
+                                                    "🎁".green(), additional, max_iterations);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Add tool result to conversation
+                            let tool_result_content = if tool_result.success {
+                                tool_result.content
+                            } else {
+                                tool_result.error.unwrap_or_else(|| "Unknown error".to_string())
+                            };
+
+                            messages.push(crate::agent::ChatMessage {
+                                role: "tool".to_string(),
+                                content: tool_result_content,
+                                tool_calls: None,
+                                tool_call_id: Some(tool_call.id.clone()),
+                                name: Some(tool_name.clone()),
+                                reasoning: None,
+                            });
+                        }
+
+                        // Continue loop to get next LLM response
+                        continue;
+                    } else {
+                        // No tool calls - return final response
+                        println!("{} LLM returned final response (length: {})", "✅".green(), response.message.content.len());
+                        let execution_time = start_time.elapsed().as_millis() as u64;
+                        return crate::agent::AgentResult::success(
+                            response.message.content,
+                            task.id.clone(),
+                            self.name().to_string(),
+                        )
+                        .with_execution_time(execution_time);
+                    }
+                }
+                Err(e) => {
+                    let execution_time = start_time.elapsed().as_millis() as u64;
+                    return crate::agent::AgentResult::error(
+                        format!("LLM execution failed: {}", e),
+                        task.id.clone(),
+                        self.name().to_string(),
+                    )
+                    .with_execution_time(execution_time);
+                }
+            }
+        }
+
+        // Max iterations reached
+        let execution_time = start_time.elapsed().as_millis() as u64;
+        crate::agent::AgentResult::error(
+            format!("Max iterations ({}) reached without final response", max_iterations),
+            task.id.clone(),
+            self.name().to_string(),
+        )
+        .with_execution_time(execution_time)
+    }
+}
+
+#[async_trait::async_trait]
+impl Agent for ConfigurableAgent {
+    fn name(&self) -> &str {
+        &self.config.name
+    }
+
+    fn description(&self) -> &str {
+        &self.config.description
+    }
+
+    fn capabilities(&self) -> Vec<crate::agent::Capability> {
+        self.config.capabilities()
+    }
+
+    fn can_handle(&self, task: &crate::agent::Task) -> bool {
+        // Check if we have the required tools for this task
+        // For now, use a simple heuristic based on task description
+        let task_desc = task.description.to_lowercase();
+
+        // Check specific capabilities based on task content
+        if task_desc.contains("read") || task_desc.contains("write") || task_desc.contains("file") {
+            return self.config.tools.iter().any(|t| t.contains("file"));
+        }
+
+        if task_desc.contains("search") || task_desc.contains("find") {
+            return self.config.tools.iter().any(|t| t.contains("search"));
+        }
+
+        if task_desc.contains("command") || task_desc.contains("run") {
+            return self.config.tools.iter().any(|t| t.contains("command"));
+        }
+
+        if task_desc.contains("code") || task_desc.contains("analyze") {
+            return self.config.capabilities.contains(&"code_analysis".to_string());
+        }
+
+        true // Default to can handle
+    }
+
+    async fn execute(&self, task: crate::agent::Task, context: &ExecutionContext) -> crate::agent::AgentResult {
+        self.execute_with_tools(&task, context).await
+    }
+
+    fn preferred_model(&self) -> &str {
+        &self.config.model
+    }
+
+    fn system_prompt(&self) -> &str {
+        &self.config.system_prompt
+    }
+
+    fn required_tools(&self) -> Vec<String> {
+        self.config.tools.clone()
+    }
+}

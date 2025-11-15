@@ -10,4 +10,17 @@ kimichat-tools = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+toml = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+async-stream = { workspace = true }
+colored = { workspace = true }
+tokio-util = { workspace = true }
+kimichat-policy = { workspace = true }
+kimichat-terminal = { workspace = true }
+kimichat-skills = { workspace = true }

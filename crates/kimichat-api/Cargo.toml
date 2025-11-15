@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 kimichat-types = { workspace = true }
 kimichat-models = { workspace = true }
+kimichat-agents = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

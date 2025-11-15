@@ -1,6 +1,10 @@
 //! LLM API clients and communication for kimichat
 //!
-//! This crate will provide API communication with various LLM backends.
-//! Implementation deferred until all dependencies are in place.
+//! This crate provides API communication with various LLM backends.
 
-// Placeholder - will be implemented once kimichat-chat and kimichat-app are ready
+// Re-export LLM client implementations from kimichat-agents
+pub use kimichat_agents::{GroqLlmClient, AnthropicLlmClient, LlamaCppClient, LlmClient};
+pub use kimichat_agents::{ChatMessage, LlmResponse, ToolCall, ToolDefinition, TokenUsage, StreamingChunk};
+
+// TODO: client.rs and streaming.rs will be implemented in kimichat-chat
+// as they depend on the KimiChat struct and logging functions
