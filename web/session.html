@@ -187,6 +187,61 @@
             background: #EF4444;
             color: #fff;
         }
+        .tool-call-args {
+            color: #9CA3AF;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+        }
+        .tool-call-iteration {
+            color: #6B7280;
+            font-size: 0.75rem;
+            font-weight: normal;
+        }
+        .tool-call-result {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #374151;
+        }
+        .tool-result-label {
+            font-size: 0.75rem;
+            color: #9CA3AF;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        .tool-result-content {
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 4px;
+            padding: 0.75rem;
+            font-size: 0.75rem;
+            color: #D1D5DB;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 0;
+        }
+
+        /* Token usage display */
+        .token-usage {
+            padding: 0.5rem 1rem;
+            margin: 0.5rem 0;
+            font-size: 0.875rem;
+            color: #9CA3AF;
+            font-family: 'Courier New', monospace;
+            background: #1F2937;
+            border-radius: 4px;
+            border-left: 3px solid #4B5563;
+        }
+        .token-stat {
+            color: #9CA3AF;
+            font-weight: normal;
+        }
+        .token-highlight {
+            color: #60A5FA;
+            font-weight: 600;
+        }
 
         /* Multi-agent progress */
         .agent-progress {
@@ -578,6 +633,9 @@
                     finalizeStreamingMessage();
                     setInputEnabled(true);
                     break;
+                case 'TokenUsage':
+                    handleTokenUsage(message.data);
+                    break;
                 case 'ToolCallRequest':
                     handleToolCallRequest(message.data);
                     break;
@@ -673,18 +731,47 @@
             }
         }
 
+        function handleTokenUsage(data) {
+            // Display token usage like TUI: 📊 Prompt: X | Completion: Y | Total: Z | Session: W
+            const container = document.getElementById('chatContainer');
+            const tokenDiv = document.createElement('div');
+            tokenDiv.className = 'token-usage';
+            tokenDiv.innerHTML = `
+                📊 Prompt: <span class="token-stat">${data.prompt_tokens}</span> |
+                Completion: <span class="token-stat">${data.completion_tokens}</span> |
+                Total: <span class="token-stat">${data.total_tokens}</span> |
+                Session: <span class="token-highlight">${data.session_total}</span>
+            `;
+            container.appendChild(tokenDiv);
+            scrollToBottom();
+        }
+
         function handleToolCallRequest(data) {
             if (data.requires_confirmation) {
                 currentToolCall = data;
                 showToolConfirmation(data);
-            } else {
-                // Show tool execution notification
-                appendToolNotification(data.tool_call_id, data.name, 'pending');
             }
+
+            // Always show tool call notification with details
+            const iterInfo = data.iteration && data.max_iterations
+                ? ` (iteration ${data.iteration}/${data.max_iterations})`
+                : '';
+
+            appendToolNotification(
+                data.tool_call_id,
+                data.name,
+                data.arguments,
+                'pending',
+                iterInfo
+            );
         }
 
         function handleToolCallResult(data) {
-            updateToolNotification(data.tool_call_id, data.success ? 'success' : 'error', data.result);
+            updateToolNotification(
+                data.tool_call_id,
+                data.success ? 'success' : 'error',
+                data.formatted_result || data.result
+            );
         }
 
         function handleTaskProgress(data) {
@@ -715,17 +802,26 @@
             scrollToBottom();
         }
 
-        function appendToolNotification(toolId, toolName, status) {
+        function appendToolNotification(toolId, toolName, args, status, iterInfo = '') {
             const container = document.getElementById('chatContainer');
             const toolDiv = document.createElement('div');
             toolDiv.className = 'message message-assistant';
             toolDiv.id = `tool-${toolId}`;
+
+            const argsText = typeof args === 'object' ? JSON.stringify(args) : String(args);
+            const argsDisplay = argsText.length > 100
+                ? argsText.substring(0, 100) + '...'
+                : argsText;
+
             toolDiv.innerHTML = `
                 <div class="tool-call">
                     <div class="tool-call-header">
-                        🔧 <span class="tool-call-name">${escapeHtml(toolName)}</span>
+                        🔧 Calling tool: <span class="tool-call-name">${escapeHtml(toolName)}</span>
+                        with args: <span class="tool-call-args">${escapeHtml(argsDisplay)}</span>
+                        ${iterInfo ? `<span class="tool-call-iteration">${escapeHtml(iterInfo)}</span>` : ''}
                         <span class="tool-call-status ${status}">${status}</span>
                     </div>
+                    <div class="tool-call-result" style="display:none;"></div>
                 </div>
             `;
             container.appendChild(toolDiv);
@@ -741,16 +837,16 @@
                     statusSpan.textContent = status;
                 }
 
-                // Add result if provided
+                // Show result in the result div
                 if (result) {
-                    const toolCall = toolDiv.querySelector('.tool-call');
-                    const resultDiv = document.createElement('div');
-                    resultDiv.style.marginTop = '0.5rem';
-                    resultDiv.style.fontSize = '0.75rem';
-                    resultDiv.style.color = '#9CA3AF';
-                    resultDiv.textContent = result.length > 100 ? result.substring(0, 100) + '...' : result;
-                    toolCall.appendChild(resultDiv);
+                    const resultDiv = toolDiv.querySelector('.tool-call-result');
+                    if (resultDiv) {
+                        resultDiv.style.display = 'block';
+                        resultDiv.innerHTML = `<div class="tool-result-label">📋 Result:</div><pre class="tool-result-content">${escapeHtml(result)}</pre>`;
+                    }
                 }
+
+                scrollToBottom();
             }
         }
 

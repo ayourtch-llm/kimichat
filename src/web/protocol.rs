@@ -87,11 +87,17 @@ pub enum ServerMessage {
         requires_confirmation: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         diff: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        iteration: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max_iterations: Option<usize>,
     },
     ToolCallResult {
         tool_call_id: String,
         result: String,
         success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        formatted_result: Option<String>,
     },
 
     // State updates
@@ -101,8 +107,10 @@ pub enum ServerMessage {
         reason: String,
     },
     TokenUsage {
-        total: usize,
-        current: usize,
+        prompt_tokens: usize,
+        completion_tokens: usize,
+        total_tokens: usize,
+        session_total: usize,
     },
 
     // Progress (multi-agent mode)

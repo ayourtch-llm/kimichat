@@ -13,9 +13,14 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::web::{
-    protocol::{ClientMessage, ServerMessage, SessionConfig, SessionId, SessionInfo},
-    session_manager::SessionManager,
+use crate::{
+    api::call_api,
+    models::Message as ChatMessage,
+    web::{
+        protocol::{ClientMessage, ServerMessage, SessionConfig, SessionId, SessionInfo},
+        session_manager::SessionManager,
+    },
+    KimiChat,
 };
 
 /// Application state shared across routes
@@ -196,6 +201,138 @@ async fn handle_client_message(
     }
 }
 
+/// Chat loop with WebSocket broadcasts (single LLM mode)
+async fn handle_chat_with_broadcast(
+    session: &Arc<crate::web::session_manager::Session>,
+) -> anyhow::Result<()> {
+    const MAX_TOOL_ITERATIONS: usize = 100;
+    let mut tool_call_iterations = 0;
+
+    loop {
+        let kimichat = session.kimichat.lock().await;
+
+        // Make API call
+        let (response, usage, _model) = call_api(
+            &kimichat,
+            &kimichat.messages,
+        )
+        .await?;
+
+        drop(kimichat); // Release lock
+
+        // Broadcast token usage
+        if let Some(usage) = &usage {
+            let mut kimichat = session.kimichat.lock().await;
+            kimichat.total_tokens_used += usage.total_tokens;
+            let session_total = kimichat.total_tokens_used;
+            drop(kimichat);
+
+            let token_msg = ServerMessage::TokenUsage {
+                prompt_tokens: usage.prompt_tokens,
+                completion_tokens: usage.completion_tokens,
+                total_tokens: usage.total_tokens,
+                session_total,
+            };
+            session.broadcast(token_msg).await;
+        }
+
+        // Add assistant response to history
+        session.kimichat.lock().await.messages.push(response.clone());
+
+        // Handle tool calls
+        if let Some(tool_calls) = &response.tool_calls {
+            tool_call_iterations += 1;
+
+            for tool_call in tool_calls {
+                // Broadcast tool call request
+                let tool_msg = ServerMessage::ToolCallRequest {
+                    tool_call_id: tool_call.id.clone(),
+                    name: tool_call.function.name.clone(),
+                    arguments: serde_json::from_str(&tool_call.function.arguments)
+                        .unwrap_or(serde_json::json!({})),
+                    requires_confirmation: false, // TODO: Integrate with policy manager
+                    diff: None, // TODO: Extract diff for file operations
+                    iteration: Some(tool_call_iterations),
+                    max_iterations: Some(MAX_TOOL_ITERATIONS),
+                };
+                session.broadcast(tool_msg).await;
+
+                // Execute tool
+                let mut kimichat = session.kimichat.lock().await;
+                let result = kimichat
+                    .execute_tool(&tool_call.function.name, &tool_call.function.arguments)
+                    .await;
+                drop(kimichat);
+
+                // Broadcast tool result
+                match result {
+                    Ok(result_str) => {
+                        let result_msg = ServerMessage::ToolCallResult {
+                            tool_call_id: tool_call.id.clone(),
+                            result: result_str.clone(),
+                            success: true,
+                            formatted_result: Some(result_str.clone()),
+                        };
+                        session.broadcast(result_msg).await;
+
+                        // Add tool result to history
+                        session.kimichat.lock().await.messages.push(ChatMessage {
+                            role: "tool".to_string(),
+                            content: result_str,
+                            tool_calls: None,
+                            tool_call_id: Some(tool_call.id.clone()),
+                            name: Some(tool_call.function.name.clone()),
+                        });
+                    }
+                    Err(e) => {
+                        let error_str = format!("Error: {}", e);
+                        let result_msg = ServerMessage::ToolCallResult {
+                            tool_call_id: tool_call.id.clone(),
+                            result: error_str.clone(),
+                            success: false,
+                            formatted_result: Some(error_str.clone()),
+                        };
+                        session.broadcast(result_msg).await;
+
+                        // Add error to history
+                        session.kimichat.lock().await.messages.push(ChatMessage {
+                            role: "tool".to_string(),
+                            content: error_str,
+                            tool_calls: None,
+                            tool_call_id: Some(tool_call.id.clone()),
+                            name: Some(tool_call.function.name.clone()),
+                        });
+                    }
+                }
+            }
+
+            // Check iteration limit
+            if tool_call_iterations >= MAX_TOOL_ITERATIONS {
+                let error_msg = ServerMessage::Error {
+                    message: format!("Maximum tool iterations ({}) reached", MAX_TOOL_ITERATIONS),
+                    recoverable: false,
+                };
+                session.broadcast(error_msg).await;
+                break;
+            }
+
+            // Continue loop for next API call
+            continue;
+        }
+
+        // No tool calls - send final response and complete
+        let msg = ServerMessage::AssistantMessage {
+            content: response.content,
+            streaming: false,
+        };
+        session.broadcast(msg).await;
+        session.broadcast(ServerMessage::AssistantMessageComplete).await;
+        break;
+    }
+
+    Ok(())
+}
+
 /// Handle SendMessage
 async fn handle_send_message(
     _client_id: Uuid,
@@ -213,43 +350,41 @@ async fn handle_send_message(
         name: None,
     });
 
-    // Call chat session (simplified for now - no streaming)
-    let result = if kimichat.use_agents {
-        match kimichat
+    // Handle based on mode
+    if kimichat.use_agents {
+        // Multi-agent mode - use existing process_with_agents
+        drop(kimichat); // Release lock before async call
+        match session.kimichat.lock().await
             .process_with_agents(&content, None)
             .await
         {
-            Ok(response) => response,
+            Ok(response) => {
+                let msg = ServerMessage::AssistantMessage {
+                    content: response,
+                    streaming: false,
+                };
+                session.broadcast(msg).await;
+                session.broadcast(ServerMessage::AssistantMessageComplete).await;
+            }
             Err(e) => {
                 let error_msg = ServerMessage::Error {
                     message: format!("Agent processing failed: {}", e),
                     recoverable: true,
                 };
                 session.broadcast(error_msg).await;
-                return;
             }
         }
     } else {
-        match crate::chat::session::chat(&mut kimichat, &content, None).await {
-            Ok(response) => response,
-            Err(e) => {
-                let error_msg = ServerMessage::Error {
-                    message: format!("Chat failed: {}", e),
-                    recoverable: true,
-                };
-                session.broadcast(error_msg).await;
-                return;
-            }
+        // Single LLM mode - use custom loop with broadcasts
+        drop(kimichat); // Release lock
+        if let Err(e) = handle_chat_with_broadcast(session).await {
+            let error_msg = ServerMessage::Error {
+                message: format!("Chat failed: {}", e),
+                recoverable: true,
+            };
+            session.broadcast(error_msg).await;
         }
-    };
-
-    // Broadcast response
-    let msg = ServerMessage::AssistantMessage {
-        content: result,
-        streaming: false,
-    };
-    session.broadcast(msg).await;
-    session.broadcast(ServerMessage::AssistantMessageComplete).await;
+    }
 }
 
 /// Handle SwitchModel
