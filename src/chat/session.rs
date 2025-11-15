@@ -4,6 +4,7 @@ use colored::Colorize;
 use crate::KimiChat;
 use crate::models::{ModelType, Message};
 use crate::agents::progress_evaluator::{ProgressEvaluator, ToolCallInfo};
+use crate::chat::history::safe_truncate;
 
 /// Main chat loop - handles user messages, tool calls, and model interactions
 pub(crate) async fn chat(
@@ -458,8 +459,8 @@ pub(crate) async fn chat(
 
                     // Track tool call for progress evaluation
                     let duration = tool_start_time.elapsed();
-                    let result_summary = if result.len() > 200 {
-                        format!("{} (truncated)", &result[..200])
+                    let result_summary = if result.chars().count() > 200 {
+                        format!("{} (truncated)", safe_truncate(&result, 200))
                     } else {
                         result.clone()
                     };

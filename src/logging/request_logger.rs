@@ -4,6 +4,7 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::models::{ChatRequest, ModelType};
+use crate::chat::history::safe_truncate;
 
 /// Log HTTP request details for debugging (console output)
 pub fn log_request(url: &str, request: &ChatRequest, api_key: &str, verbose: bool) {
@@ -35,8 +36,8 @@ pub fn log_request(url: &str, request: &ChatRequest, api_key: &str, verbose: boo
     match serde_json::to_string_pretty(&request) {
         Ok(json) => {
             // Truncate very long requests for readability
-            if json.len() > 5000 {
-                println!("{}", &json[..5000]);
+            if json.chars().count() > 5000 {
+                println!("{}", safe_truncate(&json, 5000));
                 println!("\n{}", format!("... (truncated, total {} bytes)", json.len()).bright_black());
             } else {
                 println!("{}", json);
@@ -135,8 +136,8 @@ pub fn log_response(status: &reqwest::StatusCode, headers: &reqwest::header::Hea
     if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(body) {
         match serde_json::to_string_pretty(&json_val) {
             Ok(pretty) => {
-                if pretty.len() > 5000 {
-                    println!("{}", &pretty[..5000]);
+                if pretty.chars().count() > 5000 {
+                    println!("{}", safe_truncate(&pretty, 5000));
                     println!("\n{}", format!("... (truncated, total {} bytes)", pretty.len()).bright_black());
                 } else {
                     println!("{}", pretty);
@@ -146,8 +147,8 @@ pub fn log_response(status: &reqwest::StatusCode, headers: &reqwest::header::Hea
         }
     } else {
         // Not JSON, show raw
-        if body.len() > 5000 {
-            println!("{}", &body[..5000]);
+        if body.chars().count() > 5000 {
+            println!("{}", safe_truncate(body, 5000));
             println!("\n{}", format!("... (truncated, total {} bytes)", body.len()).bright_black());
         } else {
             println!("{}", body);
@@ -165,8 +166,8 @@ pub fn log_stream_chunk(chunk_num: usize, data: &str, verbose: bool) {
     }
 
     println!("{}", format!("📦 Stream Chunk #{}: {}", chunk_num,
-        if data.len() > 200 {
-            format!("{}... ({} bytes)", &data[..200], data.len())
+        if data.chars().count() > 200 {
+            format!("{}... ({} bytes)", safe_truncate(data, 200), data.len())
         } else {
             data.to_string()
         }

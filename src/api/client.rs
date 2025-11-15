@@ -8,6 +8,7 @@ use crate::KimiChat;
 use crate::models::{ModelType, Message, Usage, ChatRequest, ChatResponse};
 use crate::agents::agent::ToolDefinition;
 use crate::logging::{log_request, log_request_to_file, log_response};
+use crate::chat::history::safe_truncate;
 use crate::tools_execution::parse_xml_tool_calls;
 use crate::MAX_RETRIES;
 use crate::agents::agent::ChatMessage;
@@ -207,8 +208,8 @@ pub(crate) async fn call_api(
             eprintln!("Messages count: {}", messages.len());
             if let Ok(req_json) = serde_json::to_string_pretty(&request) {
                 // Truncate very long requests
-                if req_json.len() > 2000 {
-                    eprintln!("Request (truncated): {}...", &req_json[..2000]);
+                if req_json.chars().count() > 2000 {
+                    eprintln!("Request (truncated): {}...", safe_truncate(&req_json, 2000));
                 } else {
                     eprintln!("Request: {}", req_json);
                 }

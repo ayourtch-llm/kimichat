@@ -2,6 +2,7 @@ use crate::agents::agent::{Agent, Task, TaskType, TaskPriority, AgentResult, Exe
 use crate::agents::agent_factory::AgentFactory;
 use crate::agents::agent_config::AgentConfig;
 use crate::agents::visibility::{VisibilityManager, ExecutionPhase, AgentStatus};
+use crate::chat::history::safe_truncate;
 use anyhow::Result;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -258,8 +259,8 @@ impl PlanningCoordinator {
                 };
 
                 // Truncate very long messages
-                let content_preview = if msg.content.len() > 300 {
-                    format!("{}... [truncated]", &msg.content[..300])
+                let content_preview = if msg.content.chars().count() > 300 {
+                    format!("{}... [truncated]", safe_truncate(&msg.content, 300))
                 } else {
                     msg.content.clone()
                 };
@@ -278,8 +279,8 @@ impl PlanningCoordinator {
         let task_description = format!("{}{}\n\nAnalyze and decompose this request: {}", agent_list, context_summary, request);
 
         // Debug: Show first 500 chars of what we're sending to planner
-        let preview = if task_description.len() > 500 {
-            format!("{}... [truncated]", &task_description[..500])
+        let preview = if task_description.chars().count() > 500 {
+            format!("{}... [truncated]", safe_truncate(&task_description, 500))
         } else {
             task_description.clone()
         };
@@ -298,8 +299,8 @@ impl PlanningCoordinator {
 
         // Debug: Show planner's raw output
         eprintln!("[DEBUG] Planner output (first 1000 chars):\n{}",
-            if plan_result.content.len() > 1000 {
-                format!("{}... [truncated]", &plan_result.content[..1000])
+            if plan_result.content.chars().count() > 1000 {
+                format!("{}... [truncated]", safe_truncate(&plan_result.content, 1000))
             } else {
                 plan_result.content.clone()
             }
