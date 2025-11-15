@@ -8,9 +8,9 @@ use std::path::PathBuf;
 use crate::KimiChat;
 use crate::cli::Cli;
 use crate::config::ClientConfig;
-use crate::policy::PolicyManager;
-use crate::logging::ConversationLogger;
-use crate::models::{ModelType, Message};
+use kimichat_policy::PolicyManager;
+use crate::ConversationLogger;
+use kimichat_types::{ModelType, Message};
 
 /// Run interactive REPL mode
 pub async fn run_repl_mode(
@@ -29,7 +29,7 @@ pub async fn run_repl_mode(
     println!("{}", "Type 'exit' or 'quit' to exit, or '/skills' to see available skill commands\n".bright_black());
 
     // Resolve terminal backend
-    let backend_type = crate::resolve_terminal_backend(cli)?;
+    let backend_type = KimiChat::resolve_terminal_backend(cli)?;
 
     let mut chat = KimiChat::new_with_config(
         client_config,

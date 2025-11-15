@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::cli::Cli;
 use crate::config::ClientConfig;
-use crate::policy::PolicyManager;
+use kimichat_policy::PolicyManager;
 use crate::web::server::{WebServer, WebServerConfig};
 
 /// Run the web server

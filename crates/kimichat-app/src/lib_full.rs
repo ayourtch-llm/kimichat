@@ -8,56 +8,86 @@ use tokio::sync::Mutex;
 
 use clap::Parser;
 
-// Import workspace crates
-use kimichat_types::{ModelType, Message, ToolCall, FunctionCall, SwitchModelArgs, ClientConfig};
-use kimichat_models::{Tool, FunctionDef, ChatResponse, Usage};
-use kimichat_policy::PolicyManager;
-use kimichat_tools::{ToolRegistry, ToolParameters, ToolContext};
-use kimichat_terminal::{self as terminal, TerminalManager};
-use kimichat_skills as skills;
-use kimichat::{ConversationLogger, save_state, load_state, summarize_and_trim_history};
-use kimichat::chat as chat_session;
-use kimichat::{call_api, call_api_streaming, call_api_with_llm_client, call_api_streaming_with_llm_client};
-use kimichat::tools_execution::validation::{repair_tool_call_with_model, validate_and_fix_tool_calls_in_place};
-use kimichat_agents::{PlanningCoordinator, GroqLlmClient, ChatMessage, ExecutionContext};
 
-// Local modules
-mod cli;
-mod config;
-mod app;
-mod web;
-mod todo;
+mod logging;
 mod open_file;
 mod preview;
+mod core;
+mod policy;
+mod tools;
+mod agents;
+mod models;
+mod tools_execution;
+mod cli;
+mod config;
+mod chat;
+mod api;
+mod app;
+mod terminal;
+mod skills;
+mod todo;
+mod web;
 
+use logging::ConversationLogger;
+use core::{ToolRegistry, ToolParameters};
+use core::tool_context::ToolContext;
+use policy::PolicyManager;
+use tools_execution::validation::{repair_tool_call_with_model, validate_and_fix_tool_calls_in_place};
 use cli::{Cli, Commands, TerminalCommands};
-use config::{normalize_api_url, initialize_tool_registry, initialize_agent_system};
+use config::{ClientConfig, GROQ_API_URL, normalize_api_url, initialize_tool_registry, initialize_agent_system};
+use chat::{save_state, load_state};
+use chat::history::summarize_and_trim_history;
+use chat::session::chat as chat_session;
+use api::{call_api, call_api_streaming, call_api_with_llm_client, call_api_streaming_with_llm_client};
 use app::{setup_from_cli, run_task_mode, run_repl_mode};
+use agents::{
+    PlanningCoordinator, GroqLlmClient,
+    ChatMessage, ExecutionContext,
+};
+use models::{
+    ModelType, Message, ToolCall, FunctionCall,
+    SwitchModelArgs,
+    Tool, FunctionDef,
+    ChatResponse, Usage,
+};
+use terminal::TerminalManager;
 
-const MAX_CONTEXT_TOKENS: usize = kimichat_types::MAX_CONTEXT_TOKENS;
-const MAX_RETRIES: u32 = kimichat_types::MAX_RETRIES;
 
-pub struct KimiChat {
-    pub api_key: String,
-    pub work_dir: PathBuf,
-    pub client: reqwest::Client,
-    pub messages: Vec<Message>,
-    pub current_model: ModelType,
-    pub total_tokens_used: usize,
-    pub logger: Option<ConversationLogger>,
-    pub tool_registry: ToolRegistry,
-    pub agent_coordinator: Option<PlanningCoordinator>,
-    pub use_agents: bool,
-    pub client_config: ClientConfig,
-    pub policy_manager: PolicyManager,
-    pub terminal_manager: Arc<Mutex<TerminalManager>>,
-    pub skill_registry: Option<Arc<skills::SkillRegistry>>,
-    pub non_interactive: bool,
-    pub todo_manager: Arc<todo::TodoManager>,
-    pub stream_responses: bool,
-    pub verbose: bool,
-    pub debug_level: u32,
+pub(crate) const MAX_CONTEXT_TOKENS: usize = 100_000; // Keep conversation under this to avoid rate limits
+pub(crate) const MAX_RETRIES: u32 = 3;
+
+pub(crate) struct KimiChat {
+    pub(crate) api_key: String,
+    pub(crate) work_dir: PathBuf,
+    pub(crate) client: reqwest::Client,
+    pub(crate) messages: Vec<Message>,
+    pub(crate) current_model: ModelType,
+    pub(crate) total_tokens_used: usize,
+    pub(crate) logger: Option<ConversationLogger>,
+    pub(crate) tool_registry: ToolRegistry,
+    // Agent system
+    pub(crate) agent_coordinator: Option<PlanningCoordinator>,
+    pub(crate) use_agents: bool,
+    // Client configuration
+    pub(crate) client_config: ClientConfig,
+    // Policy manager
+    pub(crate) policy_manager: PolicyManager,
+    // Terminal manager
+    pub(crate) terminal_manager: Arc<Mutex<TerminalManager>>,
+    // Skill registry
+    pub(crate) skill_registry: Option<Arc<skills::SkillRegistry>>,
+    // Non-interactive mode (web/API)
+    pub(crate) non_interactive: bool,
+    // Todo manager for task tracking
+    pub(crate) todo_manager: Arc<todo::TodoManager>,
+    // Streaming mode
+    pub(crate) stream_responses: bool,
+    // Verbose debug mode
+    pub(crate) verbose: bool,
+    // Debug level for controlling debug output (0=off, 1=basic, 2=detailed, etc.)
+    pub(crate) debug_level: u32,
 }
+
 impl KimiChat {
     fn new(api_key: String, work_dir: PathBuf) -> Self {
         let config = ClientConfig {

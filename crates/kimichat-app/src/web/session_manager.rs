@@ -7,8 +7,8 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 use uuid::Uuid;
 
 use crate::config::ClientConfig;
-use crate::models::Message;
-use crate::policy::PolicyManager;
+use kimichat_models::Message;
+use kimichat_policy::PolicyManager;
 use crate::web::protocol::{ServerMessage, SessionConfig, SessionInfo};
 use crate::KimiChat;
 
@@ -186,7 +186,7 @@ impl SessionManager {
 
         // Determine which model to use
         let model_str = config.model.as_deref().unwrap_or("grn_model");
-        let model = crate::models::ModelType::from_str(model_str);
+        let model = crate::ModelType::from_str(model_str);
 
         // Create KimiChat instance
         let mut kimichat = KimiChat::new_with_config(

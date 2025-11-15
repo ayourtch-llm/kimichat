@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
-    api::call_api,
+    call_api,
     models::Message as ChatMessage,
     web::{
         protocol::{ClientMessage, ServerMessage, SessionConfig, SessionId, SessionInfo},
@@ -559,12 +559,12 @@ async fn handle_switch_model(
 
 /// GET / - Serve index page
 async fn serve_index() -> Html<&'static str> {
-    Html(include_str!("../../web/index.html"))
+    Html(include_str!("../../../../web/index.html"))
 }
 
 /// GET /session/:id - Serve session page
 async fn serve_session(Path(_id): Path<SessionId>) -> Html<&'static str> {
-    Html(include_str!("../../web/session.html"))
+    Html(include_str!("../../../../web/session.html"))
 }
 
 /// Error handling

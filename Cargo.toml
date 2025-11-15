@@ -9,7 +9,6 @@ members = [
     "crates/kimichat-skills",
     "crates/kimichat-api",
     "crates/kimichat-agents",
-    "crates/kimichat-chat",
     "crates/kimichat-app",
 ]
 
@@ -27,7 +26,6 @@ kimichat-tools = { path = "crates/kimichat-tools" }
 kimichat-skills = { path = "crates/kimichat-skills" }
 kimichat-api = { path = "crates/kimichat-api" }
 kimichat-agents = { path = "crates/kimichat-agents" }
-kimichat-chat = { path = "crates/kimichat-chat" }
 
 # Async runtime and utilities
 tokio = { version = "1.41", features = ["full"] }

@@ -2,8 +2,10 @@
 //!
 //! This crate provides structures for LLM API requests and responses.
 
-use kimichat_types::Message;
 use serde::{Deserialize, Serialize};
+
+// Re-export Message from kimichat_types for convenience
+pub use kimichat_types::Message;
 
 // ============================================================================
 // Request Structures

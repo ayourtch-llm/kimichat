@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::cli::Cli;
 use crate::config::{ClientConfig, BackendType};
 use crate::config::helpers::get_model_config_from_env;
-use crate::policy::PolicyManager;
+use kimichat_policy::PolicyManager;
 
 /// Application configuration derived from CLI arguments and environment
 pub struct AppConfig {

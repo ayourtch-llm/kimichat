@@ -3,15 +3,15 @@ use colored::Colorize;
 use std::env;
 use std::sync::Arc;
 
-use crate::core::ToolRegistry;
-use crate::policy::PolicyManager;
+use kimichat_tools::ToolRegistry;
+use kimichat_policy::PolicyManager;
 use crate::tools::*;
-use crate::terminal::*;
-use crate::agents::{
+use kimichat_terminal::*;
+use kimichat_agents::{
     PlanningCoordinator, AgentFactory, LlmClient,
     AnthropicLlmClient, GroqLlmClient, LlamaCppClient,
 };
-use crate::models::ModelType;
+use kimichat_types::ModelType;
 
 pub mod helpers;
 pub use helpers::{get_system_prompt, get_api_url, get_api_key, create_model_client};
@@ -82,6 +82,26 @@ pub struct ClientConfig {
     pub model_grn_model_override: Option<String>,
     /// Override for 'red_model' model name
     pub model_red_model_override: Option<String>,
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            backend_blu_model: None,
+            backend_grn_model: None,
+            backend_red_model: None,
+            api_url_blu_model: None,
+            api_url_grn_model: None,
+            api_url_red_model: None,
+            api_key_blu_model: None,
+            api_key_grn_model: None,
+            api_key_red_model: None,
+            model_blu_model_override: None,
+            model_grn_model_override: None,
+            model_red_model_override: None,
+        }
+    }
 }
 
 /// Normalize API URL by ensuring it has the correct path for OpenAI-compatible endpoints

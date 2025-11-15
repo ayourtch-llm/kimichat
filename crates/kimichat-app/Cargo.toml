@@ -3,6 +3,10 @@ name = "kimichat"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "kimichat"
+path = "src/lib.rs"
+
 [[bin]]
 name = "kimichat"
 path = "src/main.rs"
@@ -16,7 +20,6 @@ kimichat-tools = { workspace = true }
 kimichat-skills = { workspace = true }
 kimichat-api = { workspace = true }
 kimichat-agents = { workspace = true }
-kimichat-chat = { workspace = true }
 
 clap = { workspace = true }
 clap_complete = { workspace = true }
@@ -34,6 +37,11 @@ dotenvy = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+regex = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+async-stream = { workspace = true }
+thiserror = { workspace = true }
 
 [features]
 default = ["embeddings"]
