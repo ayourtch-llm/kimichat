@@ -162,8 +162,15 @@ async fn handle_websocket(socket: WebSocket, state: AppState, session_id: Sessio
     // Handle incoming WebSocket messages
     while let Some(Ok(msg)) = ws_stream.next().await {
         if let WsMessage::Text(text) = msg {
-            if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
-                handle_client_message(client_id, client_msg, &session_clone, &state).await;
+            eprintln!("📨 Received WebSocket message: {}", text);
+            match serde_json::from_str::<ClientMessage>(&text) {
+                Ok(client_msg) => {
+                    eprintln!("✅ Parsed message: {:?}", client_msg);
+                    handle_client_message(client_id, client_msg, &session_clone, &state).await;
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to parse message: {} - Error: {}", text, e);
+                }
             }
         }
     }
