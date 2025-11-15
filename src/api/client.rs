@@ -19,8 +19,12 @@ pub(crate) async fn call_api(
     orig_messages: &[Message],
 ) -> Result<(Message, Option<Usage>, ModelType)> {
     let mut current_model = chat.current_model.clone();
-    // Clone messages for potential retry logic with model switching
-    let mut messages = orig_messages.to_vec();
+    // Clone messages and strip reasoning field (only supported by some models like Groq)
+    let mut messages: Vec<Message> = orig_messages.iter().map(|m| {
+        let mut msg = m.clone();
+        msg.reasoning = None; // Strip reasoning field to avoid compatibility issues
+        msg
+    }).collect();
 
     // Check if we need to use the new LlmClient system for Anthropic
     let is_custom_claude = if let ModelType::Custom(ref name) = current_model {
@@ -113,92 +117,7 @@ pub(crate) async fn call_api(
             if status == 400 && error_body.contains("tool_use_failed") {
                 eprintln!("{}", "❌ Tool calling error detected!".red().bold());
                 eprintln!("{}", error_body.yellow());
-
-                // Check for GrnModel hallucinating non-existent tools
-                if error_body.contains("attempted to call tool") && current_model == ModelType::GrnModel {
-                    eprintln!("{}", "🔄 GrnModel attempted to use non-existent tool. Switching to BluModel and retrying...".bright_cyan());
-
-                    // Switch to BluModel
-                    current_model = ModelType::BluModel;
-
-                    // Add message to conversation history about model switch
-                    messages.push(Message {
-                        role: "system".to_string(),
-                        content: format!("Model switched to: {} (reason: invalid tool usage)", current_model.display_name()),
-                        tool_calls: None,
-                        tool_call_id: None,
-                        name: None,
-                        reasoning: None,
-                    });
-
-                    // Retry with BluModel - continue the loop to retry
-                    retry_count = 0; // Reset retry count for new model
-                    continue;
-                }
-                // Check for BluModel generating malformed tool calls
-                else if (error_body.contains("Failed to call a function") ||
-                         error_body.contains("tool call validation failed") ||
-                         error_body.contains("parameters for tool") ||
-                         error_body.contains("did not match schema")) &&
-                        current_model == ModelType::BluModel {
-                    eprintln!("{}", "❌ BluModel generated malformed tool call (invalid JSON/parameters).".red());
-
-                    // First, try to repair the tool call using AI
-                    let mut repaired = false;
-
-                    // Find the last assistant message with tool calls
-                    if let Some(last_assistant_msg) = messages.iter_mut().rev().find(|m| m.role == "assistant" && m.tool_calls.is_some()) {
-                        if let Some(tool_calls) = &last_assistant_msg.tool_calls {
-                            eprintln!("{} Attempting AI-powered repair before switching models...", "🔧".bright_yellow());
-
-                            // Try to repair each tool call
-                            let mut repaired_calls = Vec::new();
-                            for tc in tool_calls {
-                                match crate::tools_execution::validation::repair_tool_call_with_model(chat, tc, &error_body).await {
-                                    Ok(repaired_tc) => {
-                                        repaired_calls.push(repaired_tc);
-                                    }
-                                    Err(e) => {
-                                        eprintln!("{} Failed to repair tool call '{}': {}", "⚠️".yellow(), tc.function.name, e);
-                                        // If repair fails, keep original
-                                        repaired_calls.push(tc.clone());
-                                    }
-                                }
-                            }
-
-                            // Update the message with repaired tool calls
-                            last_assistant_msg.tool_calls = Some(repaired_calls);
-                            repaired = true;
-                            eprintln!("{} Retrying with repaired tool calls...", "🔄".bright_cyan());
-                        }
-                    }
-
-                    if repaired {
-                        // Retry with repaired tool calls
-                        retry_count = 0;
-                        continue;
-                    }
-
-                    // If repair failed or wasn't possible, switch to GrnModel as fallback
-                    eprintln!("{}", "🔄 Repair failed. Switching to GrnModel and retrying...".bright_cyan());
-
-                    // Switch to GrnModel
-                    current_model = ModelType::GrnModel;
-
-                    // Add message to conversation history about model switch
-                    messages.push(Message {
-                        role: "system".to_string(),
-                        content: format!("Model switched to: {} (reason: tool call repair failed)", current_model.display_name()),
-                        tool_calls: None,
-                        tool_call_id: None,
-                        name: None,
-                        reasoning: None,
-                    });
-
-                    // Retry with GrnModel - continue the loop to retry
-                    retry_count = 0; // Reset retry count for new model
-                    continue;
-                }
+                // No automatic model switching - let the error propagate
             }
 
             eprintln!("{}", "=== API Error Details ===".red());

@@ -22,9 +22,16 @@ pub(crate) async fn call_api_streaming(
 
     let current_model = chat.current_model.clone();
 
+    // Strip reasoning field from messages (only supported by some models like Groq)
+    let messages: Vec<Message> = orig_messages.iter().map(|m| {
+        let mut msg = m.clone();
+        msg.reasoning = None; // Strip reasoning field to avoid compatibility issues
+        msg
+    }).collect();
+
     let request = ChatRequest {
         model: current_model.as_str().to_string(),
-        messages: orig_messages.to_vec(),
+        messages,
         tools: chat.get_tools(),
         tool_choice: "auto".to_string(),
         stream: Some(true),
