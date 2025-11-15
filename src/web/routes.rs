@@ -190,8 +190,10 @@ async fn handle_client_message(
             tool_call_id,
             confirmed,
         } => {
+            eprintln!("🔔 Received ConfirmTool: id={}, confirmed={}", tool_call_id, confirmed);
             // Respond to pending confirmation
-            session.respond_to_confirmation(&tool_call_id, confirmed).await;
+            let found = session.respond_to_confirmation(&tool_call_id, confirmed).await;
+            eprintln!("🔔 Confirmation response sent: found={}", found);
         }
         ListSessions => {
             let sessions = state.session_manager.list_sessions().await;
@@ -317,6 +319,7 @@ async fn handle_chat_with_broadcast(
 
                 // If requires confirmation, wait for user response
                 if requires_confirmation {
+                    eprintln!("⏳ Registering confirmation for tool_call_id: {}", tool_call.id);
                     let confirmation_rx = session
                         .register_confirmation(
                             tool_call.id.clone(),
@@ -325,6 +328,7 @@ async fn handle_chat_with_broadcast(
                         )
                         .await;
 
+                    eprintln!("⏳ Waiting for user confirmation...");
                     // Wait for confirmation (with timeout)
                     let confirmed = match tokio::time::timeout(
                         std::time::Duration::from_secs(300), // 5 minute timeout
@@ -332,10 +336,17 @@ async fn handle_chat_with_broadcast(
                     )
                     .await
                     {
-                        Ok(Ok(confirmed)) => confirmed,
-                        Ok(Err(_)) => false, // Channel closed
+                        Ok(Ok(confirmed)) => {
+                            eprintln!("✅ Received confirmation: {}", confirmed);
+                            confirmed
+                        }
+                        Ok(Err(_)) => {
+                            eprintln!("❌ Confirmation channel closed");
+                            false
+                        }
                         Err(_) => {
                             // Timeout
+                            eprintln!("⏱️  Confirmation timeout");
                             let error_msg = ServerMessage::Error {
                                 message: "Tool confirmation timeout (5 minutes)".to_string(),
                                 recoverable: true,
@@ -346,6 +357,8 @@ async fn handle_chat_with_broadcast(
                     };
 
                     if !confirmed {
+                        eprintln!("🚫 Tool execution denied");
+
                         // User denied, send error result
                         let error_str = "Tool execution cancelled by user".to_string();
                         let result_msg = ServerMessage::ToolCallResult {

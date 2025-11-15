@@ -1028,10 +1028,10 @@
 
             html += `
                     <div class="tool-confirmation-actions">
-                        <button class="tool-confirm-btn confirm" onclick="confirmToolInline('${data.tool_call_id}', '${data.name}', '${iterInfo}')">
+                        <button class="tool-confirm-btn confirm" data-tool-id="${data.tool_call_id}" data-tool-name="${escapeHtml(data.name)}" data-iter-info="${escapeHtml(iterInfo)}">
                             ✓ Confirm
                         </button>
-                        <button class="tool-confirm-btn deny" onclick="denyToolInline('${data.tool_call_id}')">
+                        <button class="tool-confirm-btn deny" data-tool-id="${data.tool_call_id}">
                             ✗ Deny
                         </button>
                     </div>
@@ -1040,18 +1040,35 @@
 
             confirmDiv.innerHTML = html;
             container.appendChild(confirmDiv);
+
+            // Add event listeners after adding to DOM
+            const confirmBtn = confirmDiv.querySelector('.tool-confirm-btn.confirm');
+            const denyBtn = confirmDiv.querySelector('.tool-confirm-btn.deny');
+
+            confirmBtn.addEventListener('click', () => {
+                confirmToolInline(data.tool_call_id, data.name, iterInfo);
+            });
+
+            denyBtn.addEventListener('click', () => {
+                denyToolInline(data.tool_call_id);
+            });
+
             scrollToBottom();
         }
 
         function confirmToolInline(toolCallId, toolName, iterInfo) {
+            console.log('Confirming tool:', toolCallId, toolName);
+
             // Send confirmation to server
-            ws.send(JSON.stringify({
+            const message = {
                 type: 'ConfirmTool',
                 data: {
                     tool_call_id: toolCallId,
                     confirmed: true
                 }
-            }));
+            };
+            console.log('Sending confirmation:', message);
+            ws.send(JSON.stringify(message));
 
             // Remove confirmation UI and show pending tool
             const confirmDiv = document.getElementById(`tool-confirm-${toolCallId}`);
@@ -1070,14 +1087,18 @@
         }
 
         function denyToolInline(toolCallId) {
+            console.log('Denying tool:', toolCallId);
+
             // Send denial to server
-            ws.send(JSON.stringify({
+            const message = {
                 type: 'ConfirmTool',
                 data: {
                     tool_call_id: toolCallId,
                     confirmed: false
                 }
-            }));
+            };
+            console.log('Sending denial:', message);
+            ws.send(JSON.stringify(message));
 
             // Remove confirmation UI
             const confirmDiv = document.getElementById(`tool-confirm-${toolCallId}`);
