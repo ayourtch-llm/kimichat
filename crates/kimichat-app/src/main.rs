@@ -15,11 +15,11 @@ use kimichat_policy::PolicyManager;
 use kimichat_tools::{ToolRegistry, ToolParameters, ToolContext};
 use kimichat_terminal::{self as terminal, TerminalManager};
 use kimichat_skills as skills;
-use kimichat::{ConversationLogger, save_state, load_state, summarize_and_trim_history};
+use kimichat::{ConversationLogger, save_state, load_state, summarize_and_trim_history, chat_loop};
 use kimichat::chat as chat_session;
 use kimichat::{call_api, call_api_streaming, call_api_with_llm_client, call_api_streaming_with_llm_client};
 use kimichat::tools_execution::validation::{repair_tool_call_with_model, validate_and_fix_tool_calls_in_place};
-use kimichat_agents::{PlanningCoordinator, GroqLlmClient, ChatMessage, ExecutionContext};
+use kimichat_agents::{PlanningCoordinator, GroqLlmClient, ChatMessage, ExecutionContext, ToolCall as AgentToolCall, FunctionCall as AgentFunctionCall};
 
 // Local modules
 mod cli;
@@ -269,9 +269,9 @@ impl KimiChat {
                     role: msg.role.clone(),
                     content: msg.content.clone(),
                     tool_calls: msg.tool_calls.clone().map(|calls| {
-                        calls.into_iter().map(|call| crate::agents::agent::ToolCall {
+                        calls.into_iter().map(|call| AgentToolCall {
                             id: call.id,
-                            function: crate::agents::agent::FunctionCall {
+                            function: AgentFunctionCall {
                                 name: call.function.name,
                                 arguments: call.function.arguments,
                             },
@@ -291,7 +291,7 @@ impl KimiChat {
                 conversation_history,
                 terminal_manager: Some(self.terminal_manager.clone()),
                 skill_registry: self.skill_registry.clone(),
-                todo_manager: Some(self.todo_manager.clone()),
+                // todo_manager: Some(self.todo_manager.clone()), // TODO: Re-enable when ExecutionContext supports todo_manager
                 cancellation_token,
             };
 

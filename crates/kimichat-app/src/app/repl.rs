@@ -29,7 +29,7 @@ pub async fn run_repl_mode(
     println!("{}", "Type 'exit' or 'quit' to exit, or '/skills' to see available skill commands\n".bright_black());
 
     // Resolve terminal backend
-    let backend_type = KimiChat::resolve_terminal_backend(cli)?;
+    let backend_type = crate::resolve_terminal_backend(cli)?;
 
     let mut chat = KimiChat::new_with_config(
         client_config,
@@ -471,7 +471,7 @@ pub async fn run_repl_mode(
                         Err(e) => {
                             eprintln!("{} {}\n", "Agent Error:".bright_red().bold(), e);
                             // Fallback to regular chat with same cancellation token
-                            match crate::chat::session::chat(&mut chat, line, Some(cancel_token.clone())).await {
+                            match crate::chat_loop(&mut chat, line, Some(cancel_token.clone())).await {
                                 Ok(response) => response,
                                 Err(e) if e.to_string().contains("interrupted") => {
                                     println!("{}", "Operation interrupted by user".bright_yellow());
@@ -494,7 +494,7 @@ pub async fn run_repl_mode(
                         *guard = Some(cancel_token.clone());
                     }
 
-                    let result = crate::chat::session::chat(&mut chat, line, Some(cancel_token.clone())).await;
+                    let result = crate::chat_loop(&mut chat, line, Some(cancel_token.clone())).await;
 
                     // Clear the current token after operation completes
                     {

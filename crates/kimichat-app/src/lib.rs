@@ -416,3 +416,8 @@ impl KimiChat {
         }
     }
 }
+
+/// Standalone helper function for resolving terminal backend type
+pub fn resolve_terminal_backend(cli: &Cli) -> Result<terminal::backend::TerminalBackendType> {
+    KimiChat::resolve_terminal_backend(cli)
+}

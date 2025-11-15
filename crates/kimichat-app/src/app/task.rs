@@ -27,7 +27,7 @@ pub async fn run_task_mode(
     println!();
 
     // Resolve terminal backend
-    let backend_type = KimiChat::resolve_terminal_backend(cli)?;
+    let backend_type = crate::resolve_terminal_backend(cli)?;
 
     let mut chat = KimiChat::new_with_config(
         client_config.clone(),
