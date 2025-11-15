@@ -77,7 +77,9 @@ pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()
         .map(|m| {
             let role = &m.role;
             let content = if m.content.len() > 500 {
-                format!("{}... [truncated]", &m.content[..500])
+                // Use char-boundary-safe truncation to avoid panic with multibyte chars (emojis, etc.)
+                let truncated: String = m.content.chars().take(500).collect();
+                format!("{}... [truncated]", truncated)
             } else {
                 m.content.clone()
             };
