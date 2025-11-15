@@ -3,4 +3,38 @@ name = "kimichat"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "kimichat"
+path = "src/main.rs"
+
 [dependencies]
+kimichat-types = { workspace = true }
+kimichat-models = { workspace = true }
+kimichat-policy = { workspace = true }
+kimichat-terminal = { workspace = true }
+kimichat-tools = { workspace = true }
+kimichat-skills = { workspace = true }
+kimichat-api = { workspace = true }
+kimichat-agents = { workspace = true }
+kimichat-chat = { workspace = true }
+
+clap = { workspace = true }
+clap_complete = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+rustyline = { workspace = true }
+reqwest = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+colored = { workspace = true }
+dotenvy = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+[features]
+default = ["embeddings"]
+embeddings = ["kimichat-skills/embeddings"]

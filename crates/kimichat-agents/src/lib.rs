@@ -1,14 +1,8 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+//! Multi-agent orchestration system for kimichat
+//!
+//! This crate will provide the agent system including:
+//! - PlanningCoordinator
+//! - Agent implementations
+//! - LLM client trait and implementations
+//!
+//! Implementation deferred until all dependencies are in place.
