@@ -1,5 +1,6 @@
 use crate::agents::agent::{Agent, ExecutionContext, LlmClient};
 use crate::agents::agent_config::AgentConfig;
+use crate::chat::history::safe_truncate;
 use crate::core::tool_registry::ToolRegistry;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -308,7 +309,7 @@ impl ConfigurableAgent {
                             }
 
                             println!("  {} Calling tool: {} with args: {}", "▶️".blue(), tool_name,
-                                if tool_args.len() > 100 { format!("{}...", &tool_args[..100]) } else { tool_args.clone() });
+                                if tool_args.chars().count() > 100 { format!("{}...", safe_truncate(tool_args, 100)) } else { tool_args.clone() });
 
                             // Execute tool using registry
                             eprintln!("[DEBUG] Agent '{}' executing tool '{}' (available in config: {})",
@@ -345,8 +346,8 @@ impl ConfigurableAgent {
                             };
 
                             let result_preview = if tool_result.success {
-                                if tool_result.content.len() > 200 {
-                                    format!("{}...", &tool_result.content[..200])
+                                if tool_result.content.chars().count() > 200 {
+                                    format!("{}...", safe_truncate(&tool_result.content, 200))
                                 } else {
                                     tool_result.content.clone()
                                 }

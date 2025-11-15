@@ -5,6 +5,16 @@ use crate::KimiChat;
 use crate::models::{ModelType, Message, ChatRequest, ChatResponse};
 use crate::logging::log_request_to_file;
 
+/// Safely truncate a string at a char boundary (not byte boundary)
+/// This prevents panics when truncating strings with multibyte UTF-8 chars (emojis, etc.)
+pub(crate) fn safe_truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        s.chars().take(max_chars).collect()
+    }
+}
+
 /// Summarize and trim conversation history when it gets too long
 /// Uses another model to summarize the middle portion of the conversation
 pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()> {
@@ -76,10 +86,8 @@ pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()
     let conversation_text = to_summarize.iter()
         .map(|m| {
             let role = &m.role;
-            let content = if m.content.len() > 500 {
-                // Use char-boundary-safe truncation to avoid panic with multibyte chars (emojis, etc.)
-                let truncated: String = m.content.chars().take(500).collect();
-                format!("{}... [truncated]", truncated)
+            let content = if m.content.chars().count() > 500 {
+                format!("{}... [truncated]", safe_truncate(&m.content, 500))
             } else {
                 m.content.clone()
             };
