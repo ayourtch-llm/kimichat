@@ -1,0 +1,6 @@
+[package]
+name = "kimichat-skills"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

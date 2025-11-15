@@ -1,54 +1,89 @@
-[package]
-name = "kimichat"
+[workspace]
+resolver = "2"
+members = [
+    "crates/kimichat-types",
+    "crates/kimichat-models",
+    "crates/kimichat-policy",
+    "crates/kimichat-terminal",
+    "crates/kimichat-tools",
+    "crates/kimichat-skills",
+    "crates/kimichat-api",
+    "crates/kimichat-agents",
+    "crates/kimichat-chat",
+    "crates/kimichat-app",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
+[workspace.dependencies]
+# Internal crates
+kimichat-types = { path = "crates/kimichat-types" }
+kimichat-models = { path = "crates/kimichat-models" }
+kimichat-policy = { path = "crates/kimichat-policy" }
+kimichat-terminal = { path = "crates/kimichat-terminal" }
+kimichat-tools = { path = "crates/kimichat-tools" }
+kimichat-skills = { path = "crates/kimichat-skills" }
+kimichat-api = { path = "crates/kimichat-api" }
+kimichat-agents = { path = "crates/kimichat-agents" }
+kimichat-chat = { path = "crates/kimichat-chat" }
+
+# Async runtime and utilities
 tokio = { version = "1.41", features = ["full"] }
 tokio-util = "0.7"
-reqwest = { version = "0.12", features = ["json", "stream"] }
-futures-util = "0.3"
-futures = "0.3"
-async-stream = "0.3"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-toml = "0.8"
-anyhow = "1.0"
-colored = "2.1"
-rustyline = "14.0"
-glob = "0.3"
-ignore = "0.4"
-dotenvy = "0.15"
-regex = "*"
-chrono = { version = "0.4.42", features = ["serde"] }
-thiserror = "1.0"
-clap = { version = "4.5", features = ["derive", "env"] }
-clap_complete = "4.5"
-similar = { version = "2.6", features = ["inline"] }
 async-trait = "0.1"
-uuid = { version = "1.0", features = ["v4", "serde"] }
+async-stream = "0.3"
+futures = "0.3"
+futures-util = "0.3"
 
-# Web server support
+# HTTP and API
+reqwest = { version = "0.12", features = ["json", "stream"] }
 axum = { version = "0.7", features = ["ws", "macros"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# CLI and UI
+clap = { version = "4.5", features = ["derive", "env"] }
+clap_complete = "4.5"
+colored = "2.1"
+rustyline = "14.0"
+
+# File and text utilities
+glob = "0.3"
+ignore = "0.4"
+regex = "*"
+similar = { version = "2.6", features = ["inline"] }
+
+# Time and IDs
+chrono = { version = "0.4.42", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # Terminal/PTY support
 portable-pty = "0.8"
 vt100 = "0.15"
 
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
+# Configuration
+dotenvy = "0.15"
 
-# Optional embedding support for semantic skill search
-fastembed = { version = "5", optional = true }
+# Optional embeddings (for skills)
+fastembed = "5"
 
-[features]
-# Default features include embeddings for better skill matching
-default = ["embeddings"]
+# Platform-specific
+[workspace.dependencies.libc]
+version = "0.2"
 
-# Semantic embeddings for skill search (using fastembed)
-embeddings = ["fastembed"]
-
-# Future: Alternative embedding backend using candle
-# candle-embeddings = ["candle-core", "candle-transformers"]
+# Default binary
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

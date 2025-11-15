@@ -1,0 +1,6 @@
+[package]
+name = "kimichat-api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
