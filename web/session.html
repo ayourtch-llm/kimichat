@@ -1058,6 +1058,14 @@
 
         function confirmToolInline(toolCallId, toolName, iterInfo) {
             console.log('Confirming tool:', toolCallId, toolName);
+            console.log('WebSocket state:', ws ? ws.readyState : 'null');
+            console.log('WebSocket OPEN:', WebSocket.OPEN);
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                console.error('WebSocket not connected! State:', ws ? ws.readyState : 'null');
+                showError('Connection lost. Please refresh the page.');
+                return;
+            }
 
             // Send confirmation to server
             const message = {
@@ -1068,7 +1076,10 @@
                 }
             };
             console.log('Sending confirmation:', message);
-            ws.send(JSON.stringify(message));
+            const jsonStr = JSON.stringify(message);
+            console.log('JSON string:', jsonStr);
+            ws.send(jsonStr);
+            console.log('Message sent via WebSocket');
 
             // Remove confirmation UI and show pending tool
             const confirmDiv = document.getElementById(`tool-confirm-${toolCallId}`);
@@ -1088,6 +1099,13 @@
 
         function denyToolInline(toolCallId) {
             console.log('Denying tool:', toolCallId);
+            console.log('WebSocket state:', ws ? ws.readyState : 'null');
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                console.error('WebSocket not connected! State:', ws ? ws.readyState : 'null');
+                showError('Connection lost. Please refresh the page.');
+                return;
+            }
 
             // Send denial to server
             const message = {
@@ -1098,7 +1116,10 @@
                 }
             };
             console.log('Sending denial:', message);
-            ws.send(JSON.stringify(message));
+            const jsonStr = JSON.stringify(message);
+            console.log('JSON string:', jsonStr);
+            ws.send(jsonStr);
+            console.log('Message sent via WebSocket');
 
             // Remove confirmation UI
             const confirmDiv = document.getElementById(`tool-confirm-${toolCallId}`);
