@@ -243,6 +243,115 @@
             font-weight: 600;
         }
 
+        /* Inline tool confirmation */
+        .tool-confirmation {
+            background: #1F2937;
+            border: 2px solid #F59E0B;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+        }
+        .tool-confirmation-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid #374151;
+        }
+        .tool-confirm-icon {
+            font-size: 1.5rem;
+        }
+        .tool-confirm-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #F59E0B;
+        }
+        .tool-confirmation-details {
+            margin-bottom: 1rem;
+        }
+        .tool-confirm-label {
+            font-size: 0.75rem;
+            color: #9CA3AF;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.25rem;
+            margin-top: 0.75rem;
+        }
+        .tool-confirm-label:first-child {
+            margin-top: 0;
+        }
+        .tool-confirm-value {
+            color: #60A5FA;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+        .tool-confirm-args {
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 4px;
+            padding: 0.75rem;
+            font-size: 0.75rem;
+            color: #D1D5DB;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 0;
+        }
+        .tool-confirm-iteration {
+            font-size: 0.75rem;
+            color: #6B7280;
+            margin-top: 0.5rem;
+        }
+        .tool-confirmation-diff {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: #111827;
+            border-radius: 6px;
+        }
+        .tool-diff-content {
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            max-height: 400px;
+            overflow-y: auto;
+            background: #000;
+            padding: 0.75rem;
+            border-radius: 4px;
+        }
+        .tool-confirmation-actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #374151;
+        }
+        .tool-confirm-btn {
+            flex: 1;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tool-confirm-btn.confirm {
+            background: #10B981;
+            color: #000;
+        }
+        .tool-confirm-btn.confirm:hover {
+            background: #059669;
+        }
+        .tool-confirm-btn.deny {
+            background: #EF4444;
+            color: #fff;
+        }
+        .tool-confirm-btn.deny:hover {
+            background: #DC2626;
+        }
+
         /* Multi-agent progress */
         .agent-progress {
             background: #1F2937;
@@ -747,23 +856,23 @@
         }
 
         function handleToolCallRequest(data) {
-            if (data.requires_confirmation) {
-                currentToolCall = data;
-                showToolConfirmation(data);
-            }
-
-            // Always show tool call notification with details
             const iterInfo = data.iteration && data.max_iterations
                 ? ` (iteration ${data.iteration}/${data.max_iterations})`
                 : '';
 
-            appendToolNotification(
-                data.tool_call_id,
-                data.name,
-                data.arguments,
-                'pending',
-                iterInfo
-            );
+            if (data.requires_confirmation) {
+                // Show inline confirmation instead of modal
+                showInlineConfirmation(data, iterInfo);
+            } else {
+                // Tool doesn't need confirmation, show as pending
+                appendToolNotification(
+                    data.tool_call_id,
+                    data.name,
+                    data.arguments,
+                    'pending',
+                    iterInfo
+                );
+            }
         }
 
         function handleToolCallResult(data) {
@@ -885,51 +994,129 @@
             }
         }
 
-        function showToolConfirmation(data) {
-            currentToolCall = data;
+        function showInlineConfirmation(data, iterInfo) {
+            const container = document.getElementById('chatContainer');
+            const confirmDiv = document.createElement('div');
+            confirmDiv.className = 'message message-assistant';
+            confirmDiv.id = `tool-confirm-${data.tool_call_id}`;
 
-            document.getElementById('toolName').textContent = data.name;
-            document.getElementById('toolArguments').textContent = JSON.stringify(data.arguments, null, 2);
+            const argsText = typeof data.arguments === 'object' ? JSON.stringify(data.arguments, null, 2) : String(data.arguments);
+
+            let html = `
+                <div class="tool-confirmation">
+                    <div class="tool-confirmation-header">
+                        <span class="tool-confirm-icon">⚠️</span>
+                        <span class="tool-confirm-title">Confirm Tool Execution</span>
+                    </div>
+                    <div class="tool-confirmation-details">
+                        <div class="tool-confirm-label">Tool:</div>
+                        <div class="tool-confirm-value">${escapeHtml(data.name)}</div>
+                        <div class="tool-confirm-label">Arguments:</div>
+                        <pre class="tool-confirm-args">${escapeHtml(argsText)}</pre>
+                        ${iterInfo ? `<div class="tool-confirm-iteration">${escapeHtml(iterInfo)}</div>` : ''}
+                    </div>
+            `;
 
             if (data.diff) {
-                document.getElementById('toolDiffContainer').style.display = 'block';
-                renderDiff(data.diff);
-            } else {
-                document.getElementById('toolDiffContainer').style.display = 'none';
+                html += `
+                    <div class="tool-confirmation-diff">
+                        <div class="tool-confirm-label">Changes:</div>
+                        <div class="tool-diff-content">${renderDiffHTML(data.diff)}</div>
+                    </div>
+                `;
             }
 
-            document.getElementById('toolConfirmModal').classList.add('active');
+            html += `
+                    <div class="tool-confirmation-actions">
+                        <button class="tool-confirm-btn confirm" onclick="confirmToolInline('${data.tool_call_id}', '${data.name}', '${iterInfo}')">
+                            ✓ Confirm
+                        </button>
+                        <button class="tool-confirm-btn deny" onclick="denyToolInline('${data.tool_call_id}')">
+                            ✗ Deny
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            confirmDiv.innerHTML = html;
+            container.appendChild(confirmDiv);
+            scrollToBottom();
         }
 
-        function confirmTool() {
-            if (currentToolCall) {
-                ws.send(JSON.stringify({
-                    type: 'ConfirmTool',
-                    data: {
-                        tool_call_id: currentToolCall.tool_call_id,
-                        confirmed: true
-                    }
-                }));
-                appendToolNotification(currentToolCall.tool_call_id, currentToolCall.name, 'pending');
+        function confirmToolInline(toolCallId, toolName, iterInfo) {
+            // Send confirmation to server
+            ws.send(JSON.stringify({
+                type: 'ConfirmTool',
+                data: {
+                    tool_call_id: toolCallId,
+                    confirmed: true
+                }
+            }));
+
+            // Remove confirmation UI and show pending tool
+            const confirmDiv = document.getElementById(`tool-confirm-${toolCallId}`);
+            if (confirmDiv) {
+                confirmDiv.remove();
             }
 
-            document.getElementById('toolConfirmModal').classList.remove('active');
-            currentToolCall = null;
+            // Show tool as pending
+            appendToolNotification(
+                toolCallId,
+                toolName,
+                {},
+                'pending',
+                iterInfo
+            );
         }
 
-        function denyTool() {
-            if (currentToolCall) {
-                ws.send(JSON.stringify({
-                    type: 'ConfirmTool',
-                    data: {
-                        tool_call_id: currentToolCall.tool_call_id,
-                        confirmed: false
-                    }
-                }));
+        function denyToolInline(toolCallId) {
+            // Send denial to server
+            ws.send(JSON.stringify({
+                type: 'ConfirmTool',
+                data: {
+                    tool_call_id: toolCallId,
+                    confirmed: false
+                }
+            }));
+
+            // Remove confirmation UI
+            const confirmDiv = document.getElementById(`tool-confirm-${toolCallId}`);
+            if (confirmDiv) {
+                confirmDiv.remove();
             }
 
-            document.getElementById('toolConfirmModal').classList.remove('active');
-            currentToolCall = null;
+            // Show cancelled message
+            const container = document.getElementById('chatContainer');
+            const cancelDiv = document.createElement('div');
+            cancelDiv.className = 'message message-assistant';
+            cancelDiv.innerHTML = `
+                <div class="tool-call">
+                    <div class="tool-call-header">
+                        ❌ Tool execution cancelled by user
+                    </div>
+                </div>
+            `;
+            container.appendChild(cancelDiv);
+            scrollToBottom();
+        }
+
+        function renderDiffHTML(diffText) {
+            const lines = diffText.split('\n');
+            let html = '';
+
+            lines.forEach(line => {
+                let className = 'context';
+                if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@') || line.startsWith('Edit #')) {
+                    className = 'header';
+                } else if (line.startsWith('+') || line.trim().startsWith('+')) {
+                    className = 'add';
+                } else if (line.startsWith('-') || line.trim().startsWith('-')) {
+                    className = 'remove';
+                }
+                html += `<span class="diff-line ${className}">${escapeHtml(line)}\n</span>`;
+            });
+
+            return html;
         }
 
         function renderDiff(diffText) {
