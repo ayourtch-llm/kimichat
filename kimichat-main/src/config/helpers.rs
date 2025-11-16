@@ -258,7 +258,10 @@ pub fn create_model_client(
 
     match detected_backend {
         BackendType::Anthropic => {
-            let url = api_url.unwrap_or_else(|| "https://api.anthropic.com".to_string());
+            let url = api_url.unwrap_or_else(|| {
+                // Check for the global ANTHROPIC_BASE_URL environment variable
+                env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| "https://api.anthropic.com".to_string())
+            });
             let key = api_key
                 .or_else(|| env::var(format!("ANTHROPIC_AUTH_TOKEN_{}", model_name_upper)).ok())
                 .or_else(|| env::var("ANTHROPIC_AUTH_TOKEN").ok())
