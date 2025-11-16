@@ -209,6 +209,9 @@ async fn handle_client_message(
         SwitchModel { model, reason } => {
             handle_switch_model(model, reason, session).await;
         }
+        UpdateSessionTitle { title } => {
+            handle_update_session_title(title, session, state).await;
+        }
         _ => {
             // TODO: Implement other message handlers
             eprintln!("Unhandled client message: {:?}", message);
@@ -467,6 +470,43 @@ async fn handle_chat_with_broadcast(
     Ok(())
 }
 
+/// Generate a title for the session based on the first user message
+async fn generate_session_title(
+    first_message: &str,
+    session: &Arc<crate::web::session_manager::Session>,
+) -> Option<String> {
+    // Create a simple prompt to generate a title
+    let title_prompt = vec![
+        kimichat_models::Message {
+            role: "user".to_string(),
+            content: format!(
+                "Generate a concise, descriptive title (3-6 words) for a chat session that starts with this message. \
+                Only respond with the title, nothing else.\n\nMessage: {}",
+                first_message
+            ),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            reasoning: None,
+        }
+    ];
+
+    // Make an isolated API call
+    let kimichat = session.kimichat.lock().await;
+    match call_api(&kimichat, &title_prompt).await {
+        Ok((response, _, _)) => {
+            let title = response.content.trim().to_string();
+            // Remove quotes if present
+            let title = title.trim_matches('"').trim_matches('\'').to_string();
+            Some(title)
+        }
+        Err(e) => {
+            eprintln!("⚠️  Failed to generate session title: {}", e);
+            None
+        }
+    }
+}
+
 /// Handle SendMessage
 async fn handle_send_message(
     _client_id: Uuid,
@@ -475,6 +515,11 @@ async fn handle_send_message(
     state: &AppState,
 ) {
     let mut kimichat = session.kimichat.lock().await;
+
+    // Check if this is the first user message
+    let is_first_message = kimichat.messages.iter()
+        .filter(|m| m.role == "user")
+        .count() == 0;
 
     // Add user message
     kimichat.messages.push(kimichat_models::Message {
@@ -497,6 +542,18 @@ async fn handle_send_message(
 
     // Update session activity timestamp
     session.update_activity().await;
+
+    // Generate title if this is the first user message
+    if is_first_message {
+        if let Some(title) = generate_session_title(&content, session).await {
+            session.set_title(Some(title.clone())).await;
+
+            // Broadcast title update to all clients
+            session.broadcast(ServerMessage::SessionTitleUpdated {
+                title: Some(title),
+            }).await;
+        }
+    }
 
     // Handle based on mode
     if use_agents {
@@ -565,6 +622,27 @@ async fn handle_switch_model(
             };
             session.broadcast(error_msg).await;
         }
+    }
+}
+
+/// Handle UpdateSessionTitle
+async fn handle_update_session_title(
+    title: Option<String>,
+    session: &Arc<crate::web::session_manager::Session>,
+    state: &AppState,
+) {
+    // Update the session title
+    session.set_title(title.clone()).await;
+
+    // Broadcast the update to all clients
+    session.broadcast(ServerMessage::SessionTitleUpdated {
+        title: title.clone(),
+    }).await;
+
+    // Save the session to disk
+    let session_id = session.id;
+    if let Err(e) = state.session_manager.save_session(&session_id).await {
+        eprintln!("⚠️  Failed to save session after title update: {}", e);
     }
 }
 

@@ -123,9 +123,16 @@ fn create_session_card(document: &Document, session: SessionInfo) -> Result<web_
     card.add_event_listener_with_callback("click", onclick.as_ref().unchecked_ref())?;
     onclick.forget();
 
+    let title_html = if let Some(ref title) = session.title {
+        format!(r#"<div class="session-title">{}</div>"#, title)
+    } else {
+        r#"<div class="session-title untitled">Untitled Session</div>"#.to_string()
+    };
+
     let html = format!(
         r#"
         <div class="session-header">
+            {}
             <div class="session-type">{}</div>
             <div class="session-id">{}</div>
         </div>
@@ -148,6 +155,7 @@ fn create_session_card(document: &Document, session: SessionInfo) -> Result<web_
             </div>
         </div>
         "#,
+        title_html,
         session.session_type,
         session.id,
         session.current_model,

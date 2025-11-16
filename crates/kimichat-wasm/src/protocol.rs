@@ -28,6 +28,7 @@ pub enum ClientMessage {
     JoinSession { session_id: SessionId },
     LeaveSession,
     ListSessions,
+    UpdateSessionTitle { title: Option<String> },
 
     // Chat interaction
     SendMessage { content: String },
@@ -106,6 +107,9 @@ pub enum ServerMessage {
         new_model: String,
         reason: String,
     },
+    SessionTitleUpdated {
+        title: Option<String>,
+    },
     TokenUsage {
         prompt_tokens: usize,
         completion_tokens: usize,
@@ -140,6 +144,7 @@ pub struct SessionInfo {
     pub id: SessionId,
     #[serde(rename = "type")]
     pub session_type: String,
+    pub title: Option<String>,
     pub created_at: String,
     pub last_activity: String,
     pub active_clients: usize,

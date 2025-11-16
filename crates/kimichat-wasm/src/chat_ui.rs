@@ -367,6 +367,10 @@ impl ChatApp {
                 self.show_error(&error, true)?;
             }
 
+            ServerMessage::SessionTitleUpdated { title } => {
+                self.update_session_title(title)?;
+            }
+
             _ => {
                 log::warn!("Unhandled message type: {:?}", msg);
             }
@@ -819,6 +823,19 @@ impl ChatApp {
     fn update_model_badge(&self, model: &str) -> Result<(), JsValue> {
         if let Ok(element) = dom::get_element_by_id(&self.document, "currentModel") {
             element.set_text_content(Some(model));
+        }
+        Ok(())
+    }
+
+    fn update_session_title(&self, title: Option<String>) -> Result<(), JsValue> {
+        if let Ok(element) = dom::get_element_by_id(&self.document, "sessionTitle") {
+            if let Some(title_text) = title {
+                element.set_text_content(Some(&title_text));
+                element.set_class_name("session-title-display");
+            } else {
+                element.set_text_content(Some("Untitled Session"));
+                element.set_class_name("session-title-display untitled");
+            }
         }
         Ok(())
     }

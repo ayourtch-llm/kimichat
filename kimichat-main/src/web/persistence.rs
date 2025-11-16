@@ -12,6 +12,7 @@ use kimichat_models::ModelType;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PersistentSession {
     pub session_id: SessionId,
+    pub title: Option<String>,
     pub chat_state: ChatState,
     pub created_at: String,
     pub last_activity: String,

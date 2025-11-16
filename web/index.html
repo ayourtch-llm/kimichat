@@ -100,17 +100,30 @@
         }
         .session-header {
             display: flex;
-            align-items: center;
-            gap: 0.75rem;
+            flex-direction: column;
+            gap: 0.5rem;
             margin-bottom: 0.75rem;
+        }
+        .session-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 0.25rem;
+        }
+        .session-title.untitled {
+            color: #6B7280;
+            font-style: italic;
         }
         .session-type {
             font-weight: 600;
+            font-size: 0.75rem;
+            color: #9CA3AF;
+            text-transform: uppercase;
         }
         .session-id {
-            color: #9CA3AF;
+            color: #6B7280;
             font-family: monospace;
-            font-size: 0.875rem;
+            font-size: 0.75rem;
         }
         .session-info {
             display: grid;

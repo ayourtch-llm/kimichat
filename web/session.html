@@ -37,6 +37,7 @@
             display: flex;
             align-items: center;
             gap: 1rem;
+            flex: 1;
         }
         .back-btn {
             background: none;
@@ -47,6 +48,22 @@
         }
         .back-btn:hover {
             color: #fff;
+        }
+        .session-title-area {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        .session-title-display {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #fff;
+        }
+        .session-title-display.untitled {
+            color: #6B7280;
+            font-style: italic;
+            font-size: 0.875rem;
+            font-weight: normal;
         }
         .session-info {
             font-size: 0.875rem;
@@ -667,8 +684,8 @@
     <header>
         <div class="header-left">
             <button class="back-btn" onclick="window.location.href='/'">←</button>
-            <div>
-                <h1 style="font-size: 1.25rem;">KimiChat</h1>
+            <div class="session-title-area">
+                <div id="sessionTitle" class="session-title-display untitled">Untitled Session</div>
                 <div class="session-info"><span id="sessionType">Web</span> Session - <span id="connectionStatus">Connecting...</span></div>
             </div>
         </div>

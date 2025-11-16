@@ -52,6 +52,7 @@ pub struct ClientConnection {
 pub struct Session {
     pub id: SessionId,
     pub session_type: SessionType,
+    pub title: Arc<RwLock<Option<String>>>,
     pub kimichat: Arc<tokio::sync::Mutex<KimiChat>>,
     pub clients: Arc<RwLock<Vec<ClientConnection>>>,
     pub created_at: DateTime<Utc>,
@@ -68,6 +69,7 @@ impl Session {
         Self {
             id,
             session_type,
+            title: Arc::new(RwLock::new(None)),
             kimichat: Arc::new(tokio::sync::Mutex::new(kimichat)),
             clients: Arc::new(RwLock::new(Vec::new())),
             created_at: Utc::now(),
@@ -145,10 +147,12 @@ impl Session {
         let kimichat = self.kimichat.lock().await;
         let clients = self.clients.read().await;
         let last_activity = *self.last_activity.lock().await;
+        let title = self.title.read().await.clone();
 
         SessionInfo {
             id: self.id,
             session_type: self.session_type.as_str().to_string(),
+            title,
             created_at: self.created_at.to_rfc3339(),
             last_activity: last_activity.to_rfc3339(),
             active_clients: clients.len(),
@@ -156,6 +160,14 @@ impl Session {
             current_model: kimichat.current_model.display_name(),
             attachable: self.session_type == SessionType::Tui || self.session_type == SessionType::Shared,
         }
+    }
+
+    pub async fn set_title(&self, title: Option<String>) {
+        *self.title.write().await = title;
+    }
+
+    pub async fn get_title(&self) -> Option<String> {
+        self.title.read().await.clone()
     }
 }
 
@@ -202,6 +214,7 @@ impl SessionManager {
         if let Some(persistence) = &self.persistence {
             let kimichat = session.kimichat.lock().await;
             let last_activity = *session.last_activity.lock().await;
+            let title = session.title.read().await.clone();
 
             let chat_state = ChatState::new(
                 kimichat.messages.clone(),
@@ -211,6 +224,7 @@ impl SessionManager {
 
             let persistent_session = PersistentSession {
                 session_id: session.id,
+                title,
                 chat_state,
                 created_at: session.created_at.to_rfc3339(),
                 last_activity: last_activity.to_rfc3339(),
@@ -348,9 +362,10 @@ impl SessionManager {
                             kimichat,
                         );
 
-                        // Update timestamps
+                        // Update timestamps and title
                         session.created_at = created_at;
                         *session.last_activity.lock().await = last_activity;
+                        *session.title.write().await = persistent_session.title;
 
                         // Store session
                         self.sessions.write().await.insert(session_id, Arc::new(session));
