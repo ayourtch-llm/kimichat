@@ -44,7 +44,7 @@ Task Format:
 
     fn parameters(&self) -> HashMap<String, ParameterDefinition> {
         HashMap::from([
-            param!("todos", "array", "Array of tasks with content (imperative form), status (pending/in_progress/completed), and activeForm (present continuous form)", required),
+            param!("todos", "string", "JSON array of tasks with content (imperative form), status (pending/in_progress/completed), and activeForm (present continuous form)", required),
         ])
     }
 
@@ -55,10 +55,20 @@ Task Format:
             None => return ToolResult::error("Todo manager not available".to_string()),
         };
 
-        // Parse todos array
-        let todos_array = match params.data.get("todos").and_then(|v| v.as_array()) {
+        // Parse todos JSON string
+        let todos_str = match params.get_required::<String>("todos") {
+            Ok(todos) => todos,
+            Err(e) => return ToolResult::error(e.to_string()),
+        };
+
+        let todos_value: serde_json::Value = match serde_json::from_str(&todos_str) {
+            Ok(value) => value,
+            Err(e) => return ToolResult::error(format!("Failed to parse todos JSON: {}", e)),
+        };
+
+        let todos_array = match todos_value.as_array() {
             Some(arr) => arr,
-            None => return ToolResult::error("Missing or invalid 'todos' parameter".to_string()),
+            None => return ToolResult::error("Todos parameter must be a JSON array".to_string()),
         };
 
         // Parse tasks
