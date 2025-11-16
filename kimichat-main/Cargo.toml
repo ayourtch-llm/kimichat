@@ -18,6 +18,7 @@ kimichat-logging = { path = "../crates/kimichat-logging" }
 kimichat-models = { path = "../crates/kimichat-models" }
 kimichat-policy = { path = "../crates/kimichat-policy" }
 kimichat-skills = { path = "../crates/kimichat-skills", features = ["embeddings"] }
+kimichat-terminal = { path = "../crates/kimichat-terminal" }
 kimichat-todo = { path = "../crates/kimichat-todo" }
 portable-pty = "0.8"
 regex = "*"

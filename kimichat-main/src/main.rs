@@ -25,6 +25,7 @@ mod web;
 
 use kimichat_logging::ConversationLogger;
 use kimichat_policy::PolicyManager;
+use kimichat_terminal::{TerminalManager, TerminalBackendType, MAX_CONCURRENT_SESSIONS};
 use core::{ToolRegistry, ToolParameters};
 use core::tool_context::ToolContext;
 use cli::{Cli, Commands};
@@ -41,7 +42,6 @@ use kimichat_models::{
     Tool, FunctionDef,
     ChatResponse,
 };
-use terminal::TerminalManager;
 
 
 pub(crate) const MAX_CONTEXT_TOKENS: usize = 100_000; // Keep conversation under this to avoid rate limits
@@ -104,7 +104,7 @@ impl KimiChat {
             policy_manager,
             false,
             false,
-            terminal::TerminalBackendType::Pty,
+            TerminalBackendType::Pty,
         )
     }
 
@@ -132,7 +132,7 @@ impl KimiChat {
             policy_manager,
             false,
             false,
-            terminal::TerminalBackendType::Pty,
+            TerminalBackendType::Pty,
         )
     }
 
@@ -158,7 +158,7 @@ impl KimiChat {
         policy_manager: PolicyManager,
         stream_responses: bool,
         verbose: bool,
-        backend_type: terminal::TerminalBackendType,
+        backend_type: TerminalBackendType,
     ) -> Self {
         let tool_registry = initialize_tool_registry();
 
@@ -189,7 +189,7 @@ impl KimiChat {
         // Initialize terminal manager with specified backend
         let log_dir = PathBuf::from("logs/terminals");
         let terminal_manager = Arc::new(Mutex::new(
-            TerminalManager::with_backend(log_dir, backend_type, terminal::MAX_CONCURRENT_SESSIONS)
+            TerminalManager::with_backend(log_dir, backend_type, MAX_CONCURRENT_SESSIONS)
         ));
 
         // Initialize todo manager
@@ -459,8 +459,8 @@ impl KimiChat {
 
 /// Resolve terminal backend type from CLI args and environment variable
 /// Priority: CLI arg > ENV var > default (PTY)
-pub(crate) fn resolve_terminal_backend(cli: &Cli) -> Result<terminal::TerminalBackendType> {
-    use terminal::TerminalBackendType;
+pub(crate) fn resolve_terminal_backend(cli: &Cli) -> Result<TerminalBackendType> {
+    use TerminalBackendType;
 
     // Get backend string from CLI or env var
     let env_backend = env::var("KIMICHAT_TERMINAL_BACKEND").ok();
@@ -514,7 +514,7 @@ async fn main() -> Result<()> {
                 let log_dir = PathBuf::from("logs/terminals");
                 let backend_type = resolve_terminal_backend(&cli)?;
                 let terminal_manager = Arc::new(Mutex::new(
-                    TerminalManager::with_backend(log_dir, backend_type, terminal::MAX_CONCURRENT_SESSIONS)
+                    TerminalManager::with_backend(log_dir, backend_type, MAX_CONCURRENT_SESSIONS)
                 ));
                 terminal_cmd.execute(terminal_manager).await?
             }

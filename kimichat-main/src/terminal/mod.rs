@@ -1,22 +1,11 @@
-// Terminal session management module
+// Terminal tool wrappers
 //
-// This module provides stateful PTY terminal session support with full VT100/ANSI
-// escape sequence interpretation, allowing LLMs to launch, interact with, and monitor
-// terminal sessions.
+// This module provides LLM-accessible tool wrappers for terminal functionality.
+// The core terminal implementation is in the kimichat-terminal crate.
 
-mod manager;
-mod session;
-mod pty_handler;
-mod screen_buffer;
-mod logger;
 mod tools;
-pub mod backend;
-mod pty_backend;
-mod tmux_backend;
 
-// Re-export public API
-pub use manager::TerminalManager;
-pub use backend::TerminalBackendType;
+// Re-export tools
 pub use tools::{
     PtyLaunchTool, PtySendKeysTool, PtyGetScreenTool,
     PtyListTool, PtyKillTool, PtyGetCursorTool,
@@ -25,7 +14,5 @@ pub use tools::{
     PtyRequestUserInputTool,
 };
 
-// Constants
-pub const MAX_CONCURRENT_SESSIONS: usize = 15;
-pub const DEFAULT_SCROLLBACK_LINES: usize = 1000;
-pub const USER_INPUT_TIMEOUT_SECS: u64 = 300; // 5 minutes
+// Re-export core types from kimichat-terminal
+pub use kimichat_terminal::{TerminalManager, TerminalBackendType, MAX_CONCURRENT_SESSIONS};

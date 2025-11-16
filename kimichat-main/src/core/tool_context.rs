@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use kimichat_policy::PolicyManager;
-use crate::terminal::TerminalManager;
+use kimichat_terminal::TerminalManager;
 use kimichat_skills::SkillRegistry;
 use kimichat_todo::TodoManager;
 
