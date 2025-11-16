@@ -67,6 +67,9 @@ pub enum ServerMessage {
     },
 
     // Chat responses
+    UserMessage {
+        content: String,
+    },
     AssistantMessage {
         content: String,
         streaming: bool,

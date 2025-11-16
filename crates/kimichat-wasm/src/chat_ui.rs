@@ -62,18 +62,60 @@ impl ChatApp {
         self.setup_markdown_toggle()?;
         self.setup_model_switcher()?;
 
-        // Connect to WebSocket
-        let ws_url = utils::build_ws_url(&self.session_id)?;
-        log::info!("Connecting to: {}", ws_url);
+        // Simple reconnection loop
+        let mut retry_count = 0;
+        loop {
+            let ws_url = utils::build_ws_url(&self.session_id)?;
 
-        let ws = WebSocket::open(&ws_url)
-            .map_err(|e| JsValue::from_str(&format!("Failed to connect: {:?}", e)))?;
+            if retry_count == 0 {
+                log::info!("Connecting to: {}", ws_url);
+            } else {
+                log::info!("Reconnecting (attempt {})...", retry_count + 1);
+            }
 
-        // Start message loop
-        self.message_loop(ws).await
+            let ws = match WebSocket::open(&ws_url) {
+                Ok(ws) => ws,
+                Err(e) => {
+                    log::error!("Failed to connect: {:?}", e);
+                    if retry_count < 10 {
+                        let delay_ms = (1000 * 2_u32.pow(retry_count)).min(60000);
+                        log::info!("Retrying in {}ms...", delay_ms);
+                        let _ = self.show_system_message(&format!("Connection lost. Retrying in {}s...", delay_ms / 1000));
+                        gloo_timers::future::TimeoutFuture::new(delay_ms).await;
+                        retry_count += 1;
+                        continue;
+                    } else {
+                        self.show_error("Connection failed after multiple retries. Please refresh the page.", false)?;
+                        return Err(JsValue::from_str("Max retries exceeded"));
+                    }
+                }
+            };
+
+            // Run message loop
+            match self.message_loop(ws).await {
+                Ok(()) => {
+                    log::info!("WebSocket closed normally");
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::error!("WebSocket error: {:?}", e);
+                    if retry_count < 10 {
+                        let delay_ms = (1000 * 2_u32.pow(retry_count)).min(60000);
+                        log::info!("Connection error. Retrying in {}ms...", delay_ms);
+                        let _ = self.show_system_message(&format!("Connection lost. Retrying in {}s...", delay_ms / 1000));
+                        gloo_timers::future::TimeoutFuture::new(delay_ms).await;
+                        retry_count += 1;
+                        continue;
+                    } else {
+                        self.show_error("Connection failed after multiple retries. Please refresh the page.", false)?;
+                        return Err(e);
+                    }
+                }
+            }
+        }
     }
 
-    async fn message_loop(self, ws: WebSocket) -> Result<(), JsValue> {
+    async fn message_loop(&self, ws: WebSocket) -> Result<(), JsValue> {
         let (mut sink, mut stream) = ws.split();
         let document = self.document.clone();
         let state = self.state.clone();
@@ -107,8 +149,8 @@ impl ChatApp {
                 }
                 Err(e) => {
                     log::error!("WebSocket error: {:?}", e);
-                    self.show_error("Connection error", false)?;
-                    break;
+                    // Return error to trigger reconnection
+                    return Err(JsValue::from_str(&format!("WebSocket error: {:?}", e)));
                 }
             }
         }
@@ -181,6 +223,39 @@ impl ChatApp {
                 state.borrow_mut().current_model = current_model.clone();
                 self.update_session_info(&session_type, &current_model)?;
                 self.render_history(document, state, history)?;
+            }
+
+            ServerMessage::UserMessage { content } => {
+                // User message from another client in the same session
+                // Check if this is a duplicate (we already rendered it immediately when sending)
+                let container = dom::get_element_by_id(document, "messagesContainer")?;
+
+                // Check the last message in the container
+                let is_duplicate = if let Ok(Some(last)) = container.query_selector(".message:last-child") {
+                    if last.class_name().contains("user") {
+                        if let Ok(Some(content_div)) = last.query_selector(".message-content") {
+                            // Compare text content (strip HTML)
+                            let existing_text = content_div.text_content().unwrap_or_default();
+                            existing_text.trim() == content.trim()
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if !is_duplicate {
+                    let msg = Message {
+                        role: "user".to_string(),
+                        content,
+                        ..Default::default()
+                    };
+                    self.render_message(document, state, &msg)?;
+                    dom::scroll_to_bottom(&container);
+                }
             }
 
             ServerMessage::AssistantMessage { content, streaming } => {

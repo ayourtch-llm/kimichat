@@ -483,6 +483,12 @@ async fn handle_send_message(
         reasoning: None,
     });
 
+    // Broadcast user message to all clients in this session
+    drop(kimichat); // Release lock before broadcast
+    session.broadcast(ServerMessage::UserMessage {
+        content: content.clone(),
+    }).await;
+
     // Handle based on mode
     if kimichat.use_agents {
         // Multi-agent mode - use existing process_with_agents
