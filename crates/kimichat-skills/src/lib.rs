@@ -464,6 +464,8 @@ This is the content.
         let registry = SkillRegistry {
             skills: HashMap::new(),
             skills_dir: PathBuf::from("skills"),
+            embedding_backend: None,
+            skill_embeddings: HashMap::new(),
         };
 
         let (name, description) = registry.parse_frontmatter(content).unwrap();

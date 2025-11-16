@@ -1,4 +1,4 @@
-# Kimi Chat - AI-Powered Development Assistant
+# Kimi Chat - AI-powered Development Assistant
 
 A sophisticated Rust-based AI development assistant that provides a Claude Code-like experience with multi-model support, rich tool integration, web API, and terminal management capabilities. Built for developers who need powerful AI assistance with fine-grained control and extensibility.
 
@@ -139,12 +139,14 @@ Kimi Chat is a production-ready AI assistant that seamlessly integrates multiple
 
 1. Clone this repository:
 ```bash
+
 git clone <repository-url>
 cd kimichat
 ```
 
 2. Build the project:
 ```bash
+
 cargo build --release
 ```
 

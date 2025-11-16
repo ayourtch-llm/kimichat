@@ -315,16 +315,11 @@ fn glob_match(pattern: &str, target: &str) -> bool {
         return true;
     }
 
-    // Convert glob pattern to regex-like matching
-    // For simplicity, we support:
-    // * - matches anything in a path component
-    // ** - matches anything including path separators
-    // ? - matches single character
-
+    // Convert to consistent path format
     let pattern = pattern.replace('\\', "/");
     let target = target.replace('\\', "/");
 
-    // Handle ** wildcard
+    // Handle ** wildcard for recursive matching
     if pattern.contains("**") {
         let parts: Vec<&str> = pattern.split("**").collect();
         if parts.len() == 2 {
@@ -339,8 +334,20 @@ fn glob_match(pattern: &str, target: &str) -> bool {
 
             let suffix_match = if suffix.is_empty() {
                 true
+            } else if suffix == "*.rs" && prefix.is_empty() {
+                // Pattern like "**/*.rs" - match anything ending with ".rs"
+                target.ends_with(".rs")
+            } else if suffix.starts_with('.') && prefix.is_empty() {
+                // Pattern like "**/*.ext" - match anything ending with extension
+                target.ends_with(suffix)
+            } else if suffix.starts_with('*') && suffix.contains('.') && prefix.is_empty() {
+                // Handle patterns like "**/*.ext" where suffix after trim is "*.ext"
+                let ext = suffix.split('.').nth(1).unwrap_or("");
+                target.ends_with(&format!(".{}", ext))
             } else {
-                target.ends_with(suffix) || target.contains(&format!("/{}", suffix))
+                // Check if target ends with suffix OR contains suffix after a slash
+                target.ends_with(&suffix) || 
+                target.contains(&format!("/{}", suffix))
             };
 
             return prefix_match && suffix_match;
@@ -348,26 +355,13 @@ fn glob_match(pattern: &str, target: &str) -> bool {
     }
 
     // Simple * wildcard matching
-    if pattern.contains('*') {
-        let parts: Vec<&str> = pattern.split('*').collect();
-        let mut pos = 0;
-        for (i, part) in parts.iter().enumerate() {
-            if i == 0 {
-                if !target[pos..].starts_with(part) {
-                    return false;
-                }
-                pos += part.len();
-            } else if i == parts.len() - 1 {
-                return target[pos..].ends_with(part);
-            } else {
-                if let Some(found_pos) = target[pos..].find(part) {
-                    pos += found_pos + part.len();
-                } else {
-                    return false;
-                }
-            }
+    if pattern.contains('*') && !pattern.contains("**") {
+        if let Some(star_pos) = pattern.find('*') {
+            let prefix = &pattern[..star_pos];
+            let suffix = &pattern[star_pos + 1..];
+            
+            return target.starts_with(prefix) && target.ends_with(suffix);
         }
-        return true;
     }
 
     // Exact match

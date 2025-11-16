@@ -417,6 +417,99 @@ impl Commands {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_cli_parsing() -> Result<(), Box<dyn std::error::Error>> {
+        // RED: This test should initially fail because we haven't implemented the test yet
+        let cli = Cli::try_parse_from(&["kimichat"])?;
+        
+        assert!(cli.command.is_none());
+        assert!(!cli.interactive); // Default should be false
+        assert!(!cli.agents);
+        assert!(!cli.auto_confirm);
+        assert!(!cli.stream);
+        assert!(!cli.verbose);
+        assert!(!cli.web);
+        assert_eq!(cli.web_port, 8080);
+        assert_eq!(cli.web_bind, "127.0.0.1");
+        assert!(!cli.web_attachable);
+        assert!(!cli.learn_policies);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_interactive_flag() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = Cli::try_parse_from(&["kimichat", "--interactive"])?;
+        
+        assert!(cli.interactive);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_agents_flag() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = Cli::try_parse_from(&["kimichat", "--agents"])?;
+        
+        assert!(cli.agents);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_web_server_flags() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = Cli::try_parse_from(&["kimichat", "--web", "--web-port", "3000", "--web-attachable"])?;
+        
+        assert!(cli.web);
+        assert_eq!(cli.web_port, 3000);
+        assert!(cli.web_attachable);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_task_argument() -> Result<(), Box<dyn std::error::Error>> {
+        let task_text = "help me debug this issue";
+        let cli = Cli::try_parse_from(&["kimichat", "--task", task_text])?;
+        
+        assert_eq!(cli.task, Some(task_text.to_string()));
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_command() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = Cli::try_parse_from(&["kimichat", "read", "src/main.rs"])?;
+        
+        match cli.command {
+            Some(Commands::Read { file_path }) => {
+                assert_eq!(file_path, "src/main.rs");
+            }
+            _ => panic!("Expected Read command"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_command() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = Cli::try_parse_from(&["kimichat", "write", "test.txt", "hello world"])?;
+        
+        match cli.command {
+            Some(Commands::Write { file_path, content }) => {
+                assert_eq!(file_path, "test.txt");
+                assert_eq!(content, "hello world");
+            }
+            _ => panic!("Expected Write command"),
+        }
+        
+        Ok(())
+    }
+}
+
 impl TerminalCommands {
     pub fn execute(&self, terminal_manager: std::sync::Arc<tokio::sync::Mutex<crate::terminal::TerminalManager>>) -> Pin<Box<dyn Future<Output = Result<String>> + '_>> {
         match self {
@@ -524,3 +617,60 @@ impl TerminalCommands {
         }
     }
 }
+
+    #[test]
+    fn test_task_argument() -> Result<(), Box<dyn std::error::Error>> {
+        let task_text = "help me debug this issue";
+        let cli = Cli::try_parse_from(&["kimichat", "--task", task_text])?;
+        
+        assert_eq!(cli.task, Some(task_text.to_string()));
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_command() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = Cli::try_parse_from(&["kimichat", "read", "src/main.rs"])?;
+        
+        match cli.command {
+            Some(Commands::Read { file_path }) => {
+                assert_eq!(file_path, "src/main.rs");
+            }
+            _ => panic!("Expected Read command"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_command() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = Cli::try_parse_from(&["kimichat", "write", "test.txt", "hello world"])?;
+        
+        match cli.command {
+            Some(Commands::Write { file_path, content }) => {
+                assert_eq!(file_path, "test.txt");
+                assert_eq!(content, "hello world");
+            }
+            _ => panic!("Expected Write command"),
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_search_command() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = Cli::try_parse_from(&["kimichat", "search", "function test", "--case-insensitive"])?;
+        
+        match cli.command {
+            Some(Commands::Search { query, pattern, regex, case_insensitive, max_results }) => {
+                assert_eq!(query, "function test");
+                assert_eq!(pattern, "*.rs");
+                assert!(!regex);
+                assert!(case_insensitive);
+                assert_eq!(max_results, 100);
+            }
+            _ => panic!("Expected Search command"),
+        }
+        
+        Ok(())
+    }

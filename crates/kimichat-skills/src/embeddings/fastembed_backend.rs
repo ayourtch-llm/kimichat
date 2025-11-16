@@ -112,6 +112,7 @@ mod tests {
     #[test]
     #[ignore] // Ignore by default as it downloads model
     fn test_fastembed_backend() {
+        use crate::embeddings::cosine_similarity;
         let backend = FastEmbedBackend::new().unwrap();
 
         let embedding = backend.embed("test query").unwrap();
@@ -122,8 +123,8 @@ mod tests {
         let emb2 = backend.embed("fix a bug").unwrap();
         let emb3 = backend.embed("cook a meal").unwrap();
 
-        let sim_similar = crate::skills::embeddings::cosine_similarity(&emb1, &emb2);
-        let sim_different = crate::skills::embeddings::cosine_similarity(&emb1, &emb3);
+        let sim_similar = cosine_similarity(&emb1, &emb2);
+        let sim_different = cosine_similarity(&emb1, &emb3);
 
         assert!(sim_similar > sim_different,
             "Similar texts should have higher similarity");
