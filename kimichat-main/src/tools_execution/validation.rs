@@ -3,7 +3,7 @@ use colored::Colorize;
 use regex::Regex;
 
 use crate::KimiChat;
-use crate::models::{ModelType, Message, ToolCall, FunctionCall, ChatRequest, ChatResponse};
+use kimichat_models::{ModelType, Message, ToolCall, FunctionCall, ChatRequest, ChatResponse};
 use crate::logging::log_request_to_file;
 
 /// Repair a malformed tool call using AI to fix the JSON arguments

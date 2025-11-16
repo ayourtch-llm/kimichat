@@ -1,4 +1,4 @@
-use crate::models::{ToolCall, FunctionCall};
+use kimichat_models::{ToolCall, FunctionCall};
 
 /// Parse tool calls from XML-like format used by some models (e.g., glm-4.6)
 /// Format: <tool_call>TOOL_NAME\n<arg_key>KEY</arg_key>\n<arg_value>VALUE</arg_value>\n...</tool_call>

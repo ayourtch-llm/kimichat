@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::KimiChat;
-use crate::models::{ModelType, Message, Usage, ChatRequest, ChatResponse};
+use kimichat_models::{ModelType, Message, Usage, ChatRequest, ChatResponse};
 use crate::agents::agent::ToolDefinition;
 use crate::logging::{log_request, log_request_to_file, log_response};
 use crate::chat::history::safe_truncate;

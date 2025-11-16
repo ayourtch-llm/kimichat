@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::KimiChat;
-use crate::models::{ModelType, Message};
+use kimichat_models::{ModelType, Message};
 use crate::chat::history::safe_truncate;
 
 /// Main chat loop - handles user messages, tool calls, and model interactions

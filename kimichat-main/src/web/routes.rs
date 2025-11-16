@@ -13,9 +13,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use kimichat_models::Message as ChatMessage;
 use crate::{
     api::call_api,
-    models::Message as ChatMessage,
     web::{
         protocol::{ClientMessage, ServerMessage, SessionConfig, SessionId, SessionInfo},
         session_manager::SessionManager,
@@ -481,7 +481,7 @@ async fn handle_send_message(
     let mut kimichat = session.kimichat.lock().await;
 
     // Add user message
-    kimichat.messages.push(crate::models::Message {
+    kimichat.messages.push(kimichat_models::Message {
         role: "user".to_string(),
         content: content.clone(),
         tool_calls: None,

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-use crate::models::{Message, ModelType};
+use kimichat_models::{Message, ModelType};
 
 /// Serializable state for saving/loading conversations
 #[derive(Debug, Serialize, Deserialize)]

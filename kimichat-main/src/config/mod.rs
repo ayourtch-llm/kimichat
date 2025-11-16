@@ -9,7 +9,7 @@ use crate::terminal::*;
 use crate::agents::{
     PlanningCoordinator, AgentFactory,
 };
-use crate::models::ModelType;
+use kimichat_models::ModelType;
 
 pub mod helpers;
 pub use helpers::{get_system_prompt, get_api_url, get_api_key, create_model_client};

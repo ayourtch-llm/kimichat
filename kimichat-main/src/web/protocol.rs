@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::models::Message;
+use kimichat_models::Message;
 
 /// Session ID type
 pub type SessionId = Uuid;

@@ -1,3 +1,6 @@
 [workspace]
-members = ["kimichat-main"]
+members = [
+    "kimichat-main",
+    "crates/kimichat-models",
+]
 resolver = "2"

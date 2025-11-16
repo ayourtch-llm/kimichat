@@ -5,7 +5,7 @@ use std::io::Write;
 use std::env;
 
 use crate::KimiChat;
-use crate::models::{ModelType, Message, Usage, ChatRequest, StreamChunk};
+use kimichat_models::{ModelType, Message, Usage, ChatRequest, StreamChunk};
 use crate::agents::agent::ToolDefinition;
 use crate::logging::{log_request, log_request_to_file, log_response, log_stream_chunk};
 use crate::tools_execution::parse_xml_tool_calls;

@@ -16,7 +16,6 @@ mod core;
 mod policy;
 mod tools;
 mod agents;
-mod models;
 mod tools_execution;
 mod cli;
 mod config;
@@ -40,7 +39,7 @@ use agents::{
     PlanningCoordinator, GroqLlmClient,
     ChatMessage, ExecutionContext,
 };
-use models::{
+use kimichat_models::{
     ModelType, Message, ToolCall, FunctionCall,
     SwitchModelArgs,
     Tool, FunctionDef,

@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::models::{ChatRequest, ModelType};
+use kimichat_models::{ChatRequest, ModelType};
 use crate::chat::history::safe_truncate;
 
 /// Log HTTP request details for debugging (console output)

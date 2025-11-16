@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::KimiChat;
-use crate::models::{ModelType, Message, ChatRequest, ChatResponse};
+use kimichat_models::{ModelType, Message, ChatRequest, ChatResponse};
 use crate::logging::log_request_to_file;
 
 /// Safely truncate a string at a char boundary (not byte boundary)

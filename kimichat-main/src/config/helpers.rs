@@ -2,7 +2,7 @@ use std::env;
 use std::sync::Arc;
 
 use crate::config::{ClientConfig, GROQ_API_URL, normalize_api_url, BackendType};
-use crate::models::ModelType;
+use kimichat_models::ModelType;
 use crate::agents::{LlmClient, AnthropicLlmClient, GroqLlmClient, LlamaCppClient};
 use colored::Colorize;
 
