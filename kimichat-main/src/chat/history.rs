@@ -5,20 +5,274 @@ use crate::KimiChat;
 use kimichat_models::{ModelType, Message, ChatRequest, ChatResponse};
 use kimichat_logging::{log_request_to_file, safe_truncate};
 
+/// Calculate the current conversation size in bytes by serializing to JSON
+pub fn calculate_conversation_size(messages: &[Message]) -> usize {
+    match serde_json::to_string(messages) {
+        Ok(json) => json.len(),
+        Err(_) => 0, // If serialization fails, return 0
+    }
+}
+
+/// Get maximum session size based on model type (different models have different context limits)
+pub fn get_max_session_size(model: &ModelType) -> usize {
+    match model {
+        ModelType::GrnModel => 150_000,  // Conservative for Groq (~8K tokens)
+        ModelType::BluModel => 400_000,  // Moderate for Claude (~100K tokens)
+        ModelType::RedModel => 600_000,  // Larger for local models
+        ModelType::AnthropicModel => 400_000,
+        ModelType::Custom(_) => 300_000, // Safe default for custom models
+    }
+}
+
+/// Determine if a session should be compacted based on its current size and model type
+pub fn should_compact_session(chat: &KimiChat, model: &ModelType) -> bool {
+    let conversation_size = calculate_conversation_size(&chat.messages);
+    let max_size = get_max_session_size(model);
+    
+    // Add a 25% buffer before triggering compaction
+    conversation_size > (max_size * 125) / 100
+}
+
+/// Intelligent compaction that preserves recent tool call context while summarizing older messages
+/// This is designed to work during tool-calling loops without losing recent context
+pub async fn intelligent_compaction(chat: &mut KimiChat, current_tool_iteration: usize) -> Result<()> {
+    const MIN_COMPACT_SIZE: usize = 100_000; // Only compact if above 100KB
+    const PRESERVE_RECENT_MESSAGES: usize = 15; // Keep more recent messages than regular summarization
+    const PRESERVE_RECENT_TOOL_CALLS: usize = 10; // Keep last 10 tool calls
+    
+    let conversation_size = calculate_conversation_size(&chat.messages);
+    
+    // Don't compact small conversations
+    if conversation_size <= MIN_COMPACT_SIZE || chat.messages.len() <= PRESERVE_RECENT_MESSAGES * 2 {
+        return Ok(());
+    }
+    
+    println!("🗜️ {} Starting intelligent compaction: {:.1} KB, {} messages", 
+             "COMPACT".yellow(), 
+             conversation_size as f64 / 1024.0, 
+             chat.messages.len());
+    
+    // Find recent tool calls to preserve context
+    let mut recent_tool_call_indices = Vec::new();
+    let mut tool_call_count = 0;
+    
+    // Scan from the end to find recent tool calls
+    for (i, message) in chat.messages.iter().enumerate().rev() {
+        if message.tool_calls.is_some() {
+            recent_tool_call_indices.push(i);
+            tool_call_count += 1;
+            
+            if tool_call_count >= PRESERVE_RECENT_TOOL_CALLS {
+                break;
+            }
+        }
+    }
+    
+    // Determine the cutoff point for preserving recent messages
+    let preserve_cutoff = if chat.messages.len() > PRESERVE_RECENT_MESSAGES {
+        chat.messages.len() - PRESERVE_RECENT_MESSAGES
+    } else {
+        0
+    };
+    
+    // Determine the tool call cutoff (preserve messages around recent tool calls)
+    let tool_call_cutoff = if let Some(&earliest_recent_tool) = recent_tool_call_indices.last() {
+        // Preserve some context before the earliest recent tool call
+        if earliest_recent_tool > 5 {
+            earliest_recent_tool - 5
+        } else {
+            0
+        }
+    } else {
+        preserve_cutoff
+    };
+    
+    // Use the more conservative cutoff (preserve more)
+    let cutoff = std::cmp::min(preserve_cutoff, tool_call_cutoff);
+    
+    // Don't compact if we don't have enough older messages
+    if cutoff <= 1 {
+        return Ok(());
+    }
+    
+    // Keep system message and very recent messages
+    let system_message = chat.messages.first().cloned();
+    let recent_messages: Vec<Message> = chat.messages
+        .iter()
+        .skip(cutoff)
+        .cloned()
+        .collect();
+    
+    // Get messages to summarize (everything between system and recent)
+    let to_summarize: Vec<Message> = chat.messages
+        .iter()
+        .skip(1) // Skip system
+        .take(cutoff - 1)
+        .cloned()
+        .collect();
+    
+    if to_summarize.is_empty() {
+        return Ok(());
+    }
+    
+    // Use the "other" model for summarization
+    let summary_model = match chat.current_model {
+        ModelType::BluModel => ModelType::GrnModel,
+        ModelType::GrnModel => ModelType::BluModel,
+        ModelType::RedModel => ModelType::BluModel,
+        ModelType::AnthropicModel => ModelType::GrnModel,
+        ModelType::Custom(_) => ModelType::BluModel,
+    };
+    
+    // Build summary request
+    let mut summary_history = vec![Message {
+        role: "system".to_string(),
+        content: format!(
+            "You are {} summarizing a conversation to reduce session size. \
+            The conversation is at tool call iteration {}. Focus on preserving \
+            key context, decisions, file changes, and task progress. This summary \
+            will be used to continue the current work without losing important context.",
+            summary_model.display_name(),
+            current_tool_iteration
+        ),
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        reasoning: None,
+    }];
+    
+    // Format the conversation to summarize (more concise during tool execution)
+    let conversation_text = to_summarize.iter()
+        .map(|m| {
+            let role = &m.role;
+            let content = if m.content.chars().count() > 300 {
+                format!("{}... [truncated]", safe_truncate(&m.content, 300))
+            } else {
+                m.content.clone()
+            };
+            
+            // Include tool call information if present
+            let tool_info = if let Some(tool_calls) = &m.tool_calls {
+                let tool_names: Vec<String> = tool_calls.iter()
+                    .map(|tc| format!("{}({})", tc.function.name, tc.function.arguments.len()))
+                    .collect();
+                format!(" [TOOLS: {}]", tool_names.join(", "))
+            } else {
+                String::new()
+            };
+            
+            format!("{}:{} {}", role, tool_info, content)
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    
+    summary_history.push(Message {
+        role: "user".to_string(),
+        content: format!(
+            "Create a concise summary of this conversation segment (tool iteration {}). \
+            Focus on: 1) Key decisions made 2) Files modified 3) Current task status 4) \
+            Important context needed to continue. Keep it under 200 words.\n\n{}",
+            current_tool_iteration,
+            conversation_text
+        ),
+        tool_calls: None,
+        tool_call_id: None,
+        name: None,
+        reasoning: None,
+    });
+    
+    // Call API to get summary using the OTHER model
+    let request = ChatRequest {
+        model: summary_model.as_str().to_string(),
+        messages: summary_history,
+        tools: vec![],
+        tool_choice: "none".to_string(),
+        stream: None,
+    };
+    
+    // Get the appropriate API URL for the summary model
+    let api_url = crate::config::get_api_url(&chat.client_config, &summary_model);
+    
+    // Log request to file for persistent debugging
+    let _ = log_request_to_file(&api_url, &request, &summary_model, &chat.api_key);
+    
+    let api_key = crate::config::get_api_key(&chat.client_config, &chat.api_key, &summary_model);
+    let response = chat.client
+        .post(&api_url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&request)
+        .send()
+        .await?;
+    
+    if !response.status().is_success() {
+        // If summarization fails, do simple trimming
+        println!("{} Intelligent compaction failed, doing simple trim", "⚠️".yellow());
+        chat.messages = vec![system_message.unwrap()];
+        chat.messages.extend(recent_messages);
+        return Ok(());
+    }
+    
+    let response_text = response.text().await?;
+    let chat_response: ChatResponse = serde_json::from_str(&response_text)?;
+    
+    if let Some(summary_msg) = chat_response.choices.into_iter().next().map(|c| c.message) {
+        let summary = summary_msg.content;
+        
+        // Rebuild history with summary
+        let mut new_history = vec![];
+        
+        if let Some(sys_msg) = system_message {
+            new_history.push(sys_msg);
+        }
+        
+        // Add intelligent compaction summary
+        new_history.push(Message {
+            role: "system".to_string(),
+            content: format!(
+                "Session compacted at tool iteration {}: {}", 
+                current_tool_iteration, 
+                safe_truncate(&summary, 500)
+            ),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            reasoning: None,
+        });
+        
+        // Add recent messages (including recent tool context)
+        new_history.extend(recent_messages);
+        
+        chat.messages = new_history;
+        
+        // Calculate new size
+        let new_size = calculate_conversation_size(&chat.messages);
+        
+        println!(
+            "{} Intelligent compaction complete: {} messages ({:.1} KB) → {} messages ({:.1} KB)",
+            "✅".green(),
+            conversation_size / 1000, // Approximate original message count
+            conversation_size as f64 / 1024.0,
+            chat.messages.len(),
+            new_size as f64 / 1024.0
+        );
+    }
+    
+    Ok(())
+}
+
 /// Summarize and trim conversation history when it gets too long
 /// Uses another model to summarize the middle portion of the conversation
 pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()> {
-    const MAX_CONVERSATION_SIZE_BYTES: usize = 200_000; // 200KB
+    // Use dynamic size limits based on model type
+    let max_size = get_max_session_size(&chat.current_model);
     const KEEP_RECENT_MESSAGES: usize = 5;
 
     // Calculate conversation size by serializing to JSON
-    let conversation_size = match serde_json::to_string(&chat.messages) {
-        Ok(json) => json.len(),
-        Err(_) => return Ok(()), // If serialization fails, skip summarization
-    };
+    let conversation_size = calculate_conversation_size(&chat.messages);
 
     // Only summarize if conversation exceeds size limit
-    if conversation_size <= MAX_CONVERSATION_SIZE_BYTES {
+    if conversation_size <= max_size {
         return Ok(());
     }
 
@@ -32,10 +286,12 @@ pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()
     };
 
     println!(
-        "{} History getting large ({:.1} KB, {} messages). Asking {} to summarize...",
+        "{} History getting large ({:.1} KB, {} messages) - exceeds {} KB limit for {}. Asking {} to summarize...",
         "📝".yellow(),
         conversation_size as f64 / 1024.0,
         chat.messages.len(),
+        max_size as f64 / 1024.0,
+        chat.current_model.display_name(),
         summary_model.display_name()
     );
 

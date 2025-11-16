@@ -164,6 +164,28 @@ pub(crate) async fn chat(
             if let Some(tool_calls) = &response.tool_calls {
                 tool_call_iterations += 1;
 
+                // Progressive session size management - check periodically during tool execution
+                const PROGRESSIVE_CHECK_INTERVAL: usize = 25; // Check every 25 tool calls
+                const MID_LOOP_SIZE_THRESHOLD: usize = 400_000; // 400KB for mid-loop compaction
+                
+                if tool_call_iterations % PROGRESSIVE_CHECK_INTERVAL == 0 {
+                    let conversation_size = crate::chat::history::calculate_conversation_size(&chat.messages);
+                    if conversation_size > MID_LOOP_SIZE_THRESHOLD {
+                        println!(
+                            "{} Session size reached {:.1} KB during tool execution (iteration {}), performing intelligent compaction...", 
+                            "🗜️".yellow(), 
+                            conversation_size as f64 / 1024.0,
+                            tool_call_iterations
+                        );
+                        
+                        // Perform intelligent compaction that preserves recent tool context
+                        if let Err(e) = crate::chat::history::intelligent_compaction(chat, tool_call_iterations).await {
+                            eprintln!("{} Intelligent compaction failed: {}", "⚠️".yellow(), e);
+                            // Continue without compaction if it fails
+                        }
+                    }
+                }
+
                 // Enhanced loop detection with lower false positive rate
                 let tool_signature = tool_calls.iter()
                     .map(|tc| format!("{}:{}", tc.function.name, tc.function.arguments))
