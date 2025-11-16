@@ -9,11 +9,6 @@
     <title>KimiChat - Session</title>
     <link rel="manifest" href="/manifest.json">
 
-    <!-- Markdown and Syntax Highlighting -->
-    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.0/marked.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
     <style>
         * {
             margin: 0;
@@ -36,7 +31,7 @@
             padding: 1rem;
             display: flex;
             align-items: center;
-            justify-between;
+            justify-content: space-between;
         }
         .header-left {
             display: flex;
@@ -64,13 +59,53 @@
             font-size: 0.875rem;
             font-weight: 600;
         }
-        #chatContainer {
+        #messagesContainer {
             flex: 1;
             overflow-y: auto;
             padding: 1.5rem;
             display: flex;
             flex-direction: column;
             gap: 1rem;
+        }
+        #agentProgress {
+            padding: 0.5rem 1rem;
+            background: #1F2937;
+            border-bottom: 1px solid #374151;
+        }
+        .agent-task {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: #111827;
+            border-radius: 6px;
+        }
+        .task-agent {
+            font-weight: 600;
+            color: #60A5FA;
+            margin-bottom: 0.25rem;
+        }
+        .task-description {
+            font-size: 0.875rem;
+            color: #9CA3AF;
+            margin-bottom: 0.5rem;
+        }
+        .progress-bar {
+            background: #374151;
+            height: 4px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            background: #10B981;
+            height: 100%;
+            transition: width 0.3s;
+        }
+        #tokenUsage {
+            padding: 0.5rem 1rem;
+            background: #1F2937;
+            border-top: 1px solid #374151;
+            text-align: center;
+            font-size: 0.75rem;
+            color: #9CA3AF;
         }
         .message {
             max-width: 80%;
@@ -410,7 +445,7 @@
             outline: none;
             border-color: #2563EB;
         }
-        #sendBtn {
+        #sendButton {
             background: #2563EB;
             color: white;
             border: none;
@@ -419,10 +454,10 @@
             font-size: 1rem;
             cursor: pointer;
         }
-        #sendBtn:hover:not(:disabled) {
+        #sendButton:hover:not(:disabled) {
             background: #1D4ED8;
         }
-        #sendBtn:disabled {
+        #sendButton:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
@@ -587,7 +622,7 @@
                 font-size: 0.75rem;
                 padding: 3px 8px;
             }
-            #chatContainer {
+            #messagesContainer {
                 padding: 1rem;
             }
             .message {
@@ -596,7 +631,7 @@
             .input-area {
                 padding: 0.75rem;
             }
-            #sendBtn {
+            #sendButton {
                 padding: 0.75rem 1rem;
             }
             .modal-content {
@@ -618,22 +653,23 @@
             <button class="back-btn" onclick="window.location.href='/'">←</button>
             <div>
                 <h1 style="font-size: 1.25rem;">KimiChat</h1>
-                <div class="session-info" id="sessionInfo">Connecting...</div>
+                <div class="session-info"><span id="sessionType">Web</span> Session - Connecting...</div>
             </div>
         </div>
-        <div class="model-badge" id="modelBadge">Loading...</div>
+        <div class="model-badge" id="currentModel">Loading...</div>
     </header>
 
-    <div id="agentProgressContainer"></div>
-    <div id="chatContainer"></div>
+    <div id="agentProgress"></div>
+    <div id="messagesContainer"></div>
+    <div id="tokenUsage" style="display:none;"></div>
 
-    <button class="view-toggle" id="viewToggle" onclick="toggleViewMode()">
+    <button class="view-toggle" id="markdownToggle">
         📝 Markdown
     </button>
 
     <div class="input-area">
         <textarea id="messageInput" placeholder="Type a message..." rows="1"></textarea>
-        <button id="sendBtn">Send</button>
+        <button id="sendButton">Send</button>
     </div>
 
     <!-- Tool Confirmation Modal -->
@@ -662,689 +698,20 @@
         </div>
     </div>
 
-    <script>
-        const sessionId = window.location.pathname.split('/').pop();
-        let ws = null;
-        let isStreaming = false;
-        let streamingMessageDiv = null;
-        let currentToolCall = null;
-        let viewMode = 'markdown'; // 'markdown' or 'plain'
-        let agentProgressTasks = {};
+    <script type="module">
+        import init, { init_chat_session } from './pkg/kimichat_wasm.js';
 
-        // Configure marked for markdown rendering
-        if (typeof marked !== 'undefined') {
-            marked.setOptions({
-                breaks: true,
-                gfm: true,
-                highlight: function(code, lang) {
-                    if (lang && hljs.getLanguage(lang)) {
-                        try {
-                            return hljs.highlight(code, { language: lang }).value;
-                        } catch (err) {}
-                    }
-                    return hljs.highlightAuto(code).value;
-                }
-            });
+        const sessionId = window.location.pathname.split('/').filter(p => p).pop();
+
+        async function run() {
+            await init();
+            await init_chat_session(sessionId);
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            connectWebSocket();
-            setupInputHandlers();
-        });
-
-        // Handle page restoration from back/forward cache
-        // This fixes the bug where message bubbles appear empty when navigating back
-        window.addEventListener('pageshow', (event) => {
-            // Check if page was restored from bfcache
-            if (event.persisted) {
-                console.log('Page restored from bfcache - cleaning up DOM');
-
-                // Clean up any malformed streaming message structures
-                const streamingElements = document.querySelectorAll('.streaming-text, .streaming-cursor');
-                streamingElements.forEach(el => {
-                    // If the streaming-text span still exists, move its content to the parent
-                    if (el.classList.contains('streaming-text')) {
-                        const parent = el.parentElement;
-                        if (parent && parent.classList.contains('message-content')) {
-                            const text = el.textContent || el.innerHTML;
-                            parent.textContent = text;
-                        }
-                    }
-                    // Remove streaming elements
-                    el.remove();
-                });
-
-                // Fix tool notifications that may have corrupted innerHTML
-                const toolDivs = document.querySelectorAll('[id^="tool-"]');
-                toolDivs.forEach(toolDiv => {
-                    const toolCall = toolDiv.querySelector('.tool-call');
-                    if (toolCall) {
-                        // Get the current text content to preserve data
-                        const header = toolCall.querySelector('.tool-call-header');
-                        const resultDiv = toolCall.querySelector('.tool-call-result');
-
-                        if (header) {
-                            // Extract and rebuild header content
-                            const headerText = header.textContent || header.innerText;
-                            // If header has lost its structure, rebuild it
-                            if (!header.querySelector('.tool-call-name')) {
-                                // Header is corrupted, try to preserve at least the text
-                                const span = document.createElement('span');
-                                span.textContent = headerText;
-                                header.innerHTML = '';
-                                header.appendChild(span);
-                            }
-                        }
-
-                        if (resultDiv && resultDiv.style.display !== 'none') {
-                            // Ensure result has proper structure
-                            const pre = resultDiv.querySelector('pre.tool-result-content');
-                            if (!pre && resultDiv.textContent) {
-                                const resultText = resultDiv.textContent || resultDiv.innerText;
-                                resultDiv.innerHTML = `<div class="tool-result-label">📋 Result:</div><pre class="tool-result-content">${escapeHtml(resultText.replace('📋 Result:', '').trim())}</pre>`;
-                            }
-                        }
-                    }
-                });
-
-                // Fix confirmation dialogs that may be corrupted
-                const confirmDivs = document.querySelectorAll('[id^="tool-confirm-"]');
-                confirmDivs.forEach(div => {
-                    // If confirmation dialog exists but structure is broken, remove it
-                    // (it should have been completed anyway if we're navigating back)
-                    const hasProperStructure = div.querySelector('.tool-confirmation-header');
-                    if (!hasProperStructure) {
-                        div.remove();
-                    }
-                });
-
-                // Reset streaming state
-                isStreaming = false;
-                streamingMessageDiv = null;
-
-                // Reconnect WebSocket if disconnected
-                if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    console.log('WebSocket disconnected after bfcache restore - reconnecting');
-                    connectWebSocket();
-                }
-            }
-        });
-
-        function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`;
-
-            ws = new WebSocket(wsUrl);
-
-            ws.onopen = () => {
-                console.log('Connected to session');
-                document.getElementById('sessionInfo').textContent = `Session: ${sessionId.substring(0, 8)}`;
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const message = JSON.parse(event.data);
-                    handleServerMessage(message);
-                } catch (error) {
-                    console.error('Failed to parse message:', error);
-                }
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                showError('Connection error');
-            };
-
-            ws.onclose = () => {
-                console.log('WebSocket closed');
-                document.getElementById('sessionInfo').textContent = 'Disconnected';
-                setInputEnabled(false);
-            };
-        }
-
-        function handleServerMessage(message) {
-            console.log('Received:', message.type, message.data);
-
-            switch (message.type) {
-                case 'SessionJoined':
-                    handleSessionJoined(message.data);
-                    break;
-                case 'AssistantMessage':
-                    appendMessage('assistant', message.data.content);
-                    setInputEnabled(true);
-                    break;
-                case 'AssistantMessageChunk':
-                    handleMessageChunk(message.data.chunk);
-                    break;
-                case 'AssistantMessageComplete':
-                    finalizeStreamingMessage();
-                    setInputEnabled(true);
-                    break;
-                case 'TokenUsage':
-                    handleTokenUsage(message.data);
-                    break;
-                case 'ToolCallRequest':
-                    handleToolCallRequest(message.data);
-                    break;
-                case 'ToolCallResult':
-                    handleToolCallResult(message.data);
-                    break;
-                case 'TaskProgress':
-                    handleTaskProgress(message.data);
-                    break;
-                case 'AgentAssigned':
-                    handleAgentAssigned(message.data);
-                    break;
-                case 'ModelSwitched':
-                    handleModelSwitched(message.data);
-                    break;
-                case 'Error':
-                    showError(message.data.message);
-                    setInputEnabled(true);
-                    break;
-            }
-        }
-
-        function handleSessionJoined(data) {
-            document.getElementById('modelBadge').textContent = data.current_model;
-
-            // Display history
-            data.history.forEach(msg => {
-                if (msg.role !== 'system') {
-                    appendMessage(msg.role, msg.content);
-                }
-            });
-
-            setInputEnabled(true);
-            scrollToBottom();
-        }
-
-        function appendMessage(role, content) {
-            const container = document.getElementById('chatContainer');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message message-${role}`;
-
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-
-            if (role === 'assistant' && viewMode === 'markdown' && typeof marked !== 'undefined') {
-                contentDiv.className += ' markdown';
-                contentDiv.innerHTML = marked.parse(content);
-            } else {
-                contentDiv.textContent = content;
-            }
-
-            messageDiv.appendChild(contentDiv);
-            container.appendChild(messageDiv);
-            scrollToBottom();
-        }
-
-        function handleMessageChunk(chunk) {
-            if (!isStreaming) {
-                isStreaming = true;
-                const container = document.getElementById('chatContainer');
-                streamingMessageDiv = document.createElement('div');
-                streamingMessageDiv.className = 'message message-assistant';
-
-                const contentDiv = document.createElement('div');
-                contentDiv.className = 'message-content';
-                if (viewMode === 'markdown') {
-                    contentDiv.className += ' markdown';
-                }
-
-                contentDiv.innerHTML = '<span class="streaming-text"></span><span class="streaming-cursor"></span>';
-                streamingMessageDiv.appendChild(contentDiv);
-                container.appendChild(streamingMessageDiv);
-            }
-
-            const textSpan = streamingMessageDiv.querySelector('.streaming-text');
-            const currentText = textSpan.textContent + chunk;
-
-            if (viewMode === 'markdown' && typeof marked !== 'undefined') {
-                textSpan.innerHTML = marked.parse(currentText);
-            } else {
-                textSpan.textContent = currentText;
-            }
-
-            scrollToBottom();
-        }
-
-        function finalizeStreamingMessage() {
-            if (streamingMessageDiv) {
-                const cursor = streamingMessageDiv.querySelector('.streaming-cursor');
-                if (cursor) cursor.remove();
-                streamingMessageDiv = null;
-                isStreaming = false;
-            }
-        }
-
-        function handleTokenUsage(data) {
-            // Display token usage like TUI: 📊 Prompt: X | Completion: Y | Total: Z | Session: W
-            const container = document.getElementById('chatContainer');
-            const tokenDiv = document.createElement('div');
-            tokenDiv.className = 'token-usage';
-            tokenDiv.innerHTML = `
-                📊 Prompt: <span class="token-stat">${data.prompt_tokens}</span> |
-                Completion: <span class="token-stat">${data.completion_tokens}</span> |
-                Total: <span class="token-stat">${data.total_tokens}</span> |
-                Session: <span class="token-highlight">${data.session_total}</span>
-            `;
-            container.appendChild(tokenDiv);
-            scrollToBottom();
-        }
-
-        function handleToolCallRequest(data) {
-            const iterInfo = data.iteration && data.max_iterations
-                ? ` (iteration ${data.iteration}/${data.max_iterations})`
-                : '';
-
-            if (data.requires_confirmation) {
-                // Show inline confirmation instead of modal
-                showInlineConfirmation(data, iterInfo);
-            } else {
-                // Tool doesn't need confirmation, show as pending
-                appendToolNotification(
-                    data.tool_call_id,
-                    data.name,
-                    data.arguments,
-                    'pending',
-                    iterInfo
-                );
-            }
-        }
-
-        function handleToolCallResult(data) {
-            updateToolNotification(
-                data.tool_call_id,
-                data.success ? 'success' : 'error',
-                data.formatted_result || data.result
-            );
-        }
-
-        function handleTaskProgress(data) {
-            updateAgentProgress(data.task_id, data);
-        }
-
-        function handleAgentAssigned(data) {
-            updateAgentProgress(data.task_id, {
-                agent_name: data.agent_name,
-                task_id: data.task_id,
-                description: data.task_description,
-                progress: 0,
-                status: 'TaskExecution'
-            });
-        }
-
-        function handleModelSwitched(data) {
-            document.getElementById('modelBadge').textContent = data.new_model;
-            appendSystemMessage(`Model switched to ${data.new_model}`);
-        }
-
-        function appendSystemMessage(text) {
-            const container = document.getElementById('chatContainer');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message message-system';
-            messageDiv.textContent = text;
-            container.appendChild(messageDiv);
-            scrollToBottom();
-        }
-
-        function appendToolNotification(toolId, toolName, args, status, iterInfo = '') {
-            const container = document.getElementById('chatContainer');
-            const toolDiv = document.createElement('div');
-            toolDiv.className = 'message message-assistant';
-            toolDiv.id = `tool-${toolId}`;
-
-            const argsText = typeof args === 'object' ? JSON.stringify(args) : String(args);
-            const argsDisplay = argsText.length > 100
-                ? argsText.substring(0, 100) + '...'
-                : argsText;
-
-            toolDiv.innerHTML = `
-                <div class="tool-call">
-                    <div class="tool-call-header">
-                        🔧 Calling tool: <span class="tool-call-name">${escapeHtml(toolName)}</span>
-                        with args: <span class="tool-call-args">${escapeHtml(argsDisplay)}</span>
-                        ${iterInfo ? `<span class="tool-call-iteration">${escapeHtml(iterInfo)}</span>` : ''}
-                        <span class="tool-call-status ${status}">${status}</span>
-                    </div>
-                    <div class="tool-call-result" style="display:none;"></div>
-                </div>
-            `;
-            container.appendChild(toolDiv);
-            scrollToBottom();
-        }
-
-        function updateToolNotification(toolId, status, result) {
-            const toolDiv = document.getElementById(`tool-${toolId}`);
-            if (toolDiv) {
-                const statusSpan = toolDiv.querySelector('.tool-call-status');
-                if (statusSpan) {
-                    statusSpan.className = `tool-call-status ${status}`;
-                    statusSpan.textContent = status;
-                }
-
-                // Show result in the result div
-                if (result) {
-                    const resultDiv = toolDiv.querySelector('.tool-call-result');
-                    if (resultDiv) {
-                        resultDiv.style.display = 'block';
-                        resultDiv.innerHTML = `<div class="tool-result-label">📋 Result:</div><pre class="tool-result-content">${escapeHtml(result)}</pre>`;
-                    }
-                }
-
-                scrollToBottom();
-            }
-        }
-
-        function updateAgentProgress(taskId, data) {
-            const container = document.getElementById('agentProgressContainer');
-            let progressDiv = document.getElementById(`agent-progress-${taskId}`);
-
-            if (!progressDiv) {
-                progressDiv = document.createElement('div');
-                progressDiv.id = `agent-progress-${taskId}`;
-                progressDiv.className = 'agent-progress';
-                container.appendChild(progressDiv);
-            }
-
-            const progress = data.progress || 0;
-            const isComplete = data.status === 'Completed' || progress >= 1.0;
-
-            progressDiv.innerHTML = `
-                <div class="agent-progress-header">
-                    <div class="agent-name">🤖 ${escapeHtml(data.agent_name)}</div>
-                    <div style="font-size: 0.75rem; color: #9CA3AF;">${Math.round(progress * 100)}%</div>
-                </div>
-                <div class="agent-task">${escapeHtml(data.description)}</div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${progress * 100}%"></div>
-                </div>
-            `;
-
-            // Remove completed tasks after a delay
-            if (isComplete) {
-                setTimeout(() => {
-                    progressDiv.style.opacity = '0';
-                    progressDiv.style.transition = 'opacity 0.5s';
-                    setTimeout(() => progressDiv.remove(), 500);
-                }, 2000);
-            }
-        }
-
-        function showInlineConfirmation(data, iterInfo) {
-            const container = document.getElementById('chatContainer');
-            const confirmDiv = document.createElement('div');
-            confirmDiv.className = 'message message-assistant';
-            confirmDiv.id = `tool-confirm-${data.tool_call_id}`;
-
-            const argsText = typeof data.arguments === 'object' ? JSON.stringify(data.arguments, null, 2) : String(data.arguments);
-
-            let html = `
-                <div class="tool-confirmation">
-                    <div class="tool-confirmation-header">
-                        <span class="tool-confirm-icon">⚠️</span>
-                        <span class="tool-confirm-title">Confirm Tool Execution</span>
-                    </div>
-                    <div class="tool-confirmation-details">
-                        <div class="tool-confirm-label">Tool:</div>
-                        <div class="tool-confirm-value">${escapeHtml(data.name)}</div>
-                        <div class="tool-confirm-label">Arguments:</div>
-                        <pre class="tool-confirm-args">${escapeHtml(argsText)}</pre>
-                        ${iterInfo ? `<div class="tool-confirm-iteration">${escapeHtml(iterInfo)}</div>` : ''}
-                    </div>
-            `;
-
-            if (data.diff) {
-                html += `
-                    <div class="tool-confirmation-diff">
-                        <div class="tool-confirm-label">Changes:</div>
-                        <div class="tool-diff-content">${renderDiffHTML(data.diff)}</div>
-                    </div>
-                `;
-            }
-
-            html += `
-                    <div class="tool-confirmation-actions">
-                        <button class="tool-confirm-btn confirm" data-tool-id="${data.tool_call_id}" data-tool-name="${escapeHtml(data.name)}" data-iter-info="${escapeHtml(iterInfo)}">
-                            ✓ Confirm
-                        </button>
-                        <button class="tool-confirm-btn deny" data-tool-id="${data.tool_call_id}">
-                            ✗ Deny
-                        </button>
-                    </div>
-                </div>
-            `;
-
-            confirmDiv.innerHTML = html;
-            container.appendChild(confirmDiv);
-
-            // Add event listeners after adding to DOM
-            const confirmBtn = confirmDiv.querySelector('.tool-confirm-btn.confirm');
-            const denyBtn = confirmDiv.querySelector('.tool-confirm-btn.deny');
-
-            confirmBtn.addEventListener('click', () => {
-                confirmToolInline(data.tool_call_id, data.name, iterInfo);
-            });
-
-            denyBtn.addEventListener('click', () => {
-                denyToolInline(data.tool_call_id);
-            });
-
-            scrollToBottom();
-        }
-
-        function confirmToolInline(toolCallId, toolName, iterInfo) {
-            console.log('Confirming tool:', toolCallId, toolName);
-            console.log('WebSocket state:', ws ? ws.readyState : 'null');
-            console.log('WebSocket OPEN:', WebSocket.OPEN);
-
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                console.error('WebSocket not connected! State:', ws ? ws.readyState : 'null');
-                showError('Connection lost. Please refresh the page.');
-                return;
-            }
-
-            // Send confirmation to server
-            const message = {
-                type: 'ConfirmTool',
-                data: {
-                    tool_call_id: toolCallId,
-                    confirmed: true
-                }
-            };
-            console.log('Sending confirmation:', message);
-            const jsonStr = JSON.stringify(message);
-            console.log('JSON string:', jsonStr);
-            ws.send(jsonStr);
-            console.log('Message sent via WebSocket');
-
-            // Remove confirmation UI and show pending tool
-            const confirmDiv = document.getElementById(`tool-confirm-${toolCallId}`);
-            if (confirmDiv) {
-                confirmDiv.remove();
-            }
-
-            // Show tool as pending
-            appendToolNotification(
-                toolCallId,
-                toolName,
-                {},
-                'pending',
-                iterInfo
-            );
-        }
-
-        function denyToolInline(toolCallId) {
-            console.log('Denying tool:', toolCallId);
-            console.log('WebSocket state:', ws ? ws.readyState : 'null');
-
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                console.error('WebSocket not connected! State:', ws ? ws.readyState : 'null');
-                showError('Connection lost. Please refresh the page.');
-                return;
-            }
-
-            // Send denial to server
-            const message = {
-                type: 'ConfirmTool',
-                data: {
-                    tool_call_id: toolCallId,
-                    confirmed: false
-                }
-            };
-            console.log('Sending denial:', message);
-            const jsonStr = JSON.stringify(message);
-            console.log('JSON string:', jsonStr);
-            ws.send(jsonStr);
-            console.log('Message sent via WebSocket');
-
-            // Remove confirmation UI
-            const confirmDiv = document.getElementById(`tool-confirm-${toolCallId}`);
-            if (confirmDiv) {
-                confirmDiv.remove();
-            }
-
-            // Show cancelled message
-            const container = document.getElementById('chatContainer');
-            const cancelDiv = document.createElement('div');
-            cancelDiv.className = 'message message-assistant';
-            cancelDiv.innerHTML = `
-                <div class="tool-call">
-                    <div class="tool-call-header">
-                        ❌ Tool execution cancelled by user
-                    </div>
-                </div>
-            `;
-            container.appendChild(cancelDiv);
-            scrollToBottom();
-        }
-
-        function renderDiffHTML(diffText) {
-            const lines = diffText.split('\n');
-            let html = '';
-
-            lines.forEach(line => {
-                let className = 'context';
-                if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@') || line.startsWith('Edit #')) {
-                    className = 'header';
-                } else if (line.startsWith('+') || line.trim().startsWith('+')) {
-                    className = 'add';
-                } else if (line.startsWith('-') || line.trim().startsWith('-')) {
-                    className = 'remove';
-                }
-                html += `<span class="diff-line ${className}">${escapeHtml(line)}\n</span>`;
-            });
-
-            return html;
-        }
-
-        function renderDiff(diffText) {
-            const diffDiv = document.getElementById('toolDiff');
-            const lines = diffText.split('\n');
-            let html = '';
-
-            lines.forEach(line => {
-                let className = 'context';
-                if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) {
-                    className = 'header';
-                } else if (line.startsWith('+')) {
-                    className = 'add';
-                } else if (line.startsWith('-')) {
-                    className = 'remove';
-                }
-                html += `<span class="diff-line ${className}">${escapeHtml(line)}\n</span>`;
-            });
-
-            diffDiv.innerHTML = html;
-        }
-
-        function toggleViewMode() {
-            viewMode = viewMode === 'markdown' ? 'plain' : 'markdown';
-            const toggleBtn = document.getElementById('viewToggle');
-            toggleBtn.textContent = viewMode === 'markdown' ? '📝 Markdown' : '📄 Plain';
-
-            // Re-render all messages
-            const messages = document.querySelectorAll('.message-assistant .message-content');
-            messages.forEach(msg => {
-                const text = msg.textContent || msg.innerText;
-                if (viewMode === 'markdown' && typeof marked !== 'undefined') {
-                    msg.className = 'message-content markdown';
-                    msg.innerHTML = marked.parse(text);
-                } else {
-                    msg.className = 'message-content';
-                    msg.textContent = text;
-                }
-            });
-        }
-
-        function sendMessage() {
-            const input = document.getElementById('messageInput');
-            const content = input.value.trim();
-
-            if (!content || !ws || ws.readyState !== WebSocket.OPEN) return;
-
-            appendMessage('user', content);
-
-            ws.send(JSON.stringify({
-                type: 'SendMessage',
-                data: { content }
-            }));
-
-            input.value = '';
-            input.style.height = 'auto';
-            setInputEnabled(false);
-        }
-
-        function setupInputHandlers() {
-            const input = document.getElementById('messageInput');
-            const sendBtn = document.getElementById('sendBtn');
-
-            sendBtn.addEventListener('click', sendMessage);
-
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            });
-
-            input.addEventListener('input', () => {
-                input.style.height = 'auto';
-                input.style.height = input.scrollHeight + 'px';
-            });
-        }
-
-        function setInputEnabled(enabled) {
-            document.getElementById('messageInput').disabled = !enabled;
-            document.getElementById('sendBtn').disabled = !enabled;
-        }
-
-        function scrollToBottom() {
-            const container = document.getElementById('chatContainer');
-            container.scrollTop = container.scrollHeight;
-        }
-
-        function showError(message) {
-            const container = document.getElementById('chatContainer');
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'error';
-            errorDiv.textContent = 'Error: ' + message;
-            container.appendChild(errorDiv);
-            scrollToBottom();
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Close modal when clicking outside
-        document.getElementById('toolConfirmModal').addEventListener('click', (e) => {
-            if (e.target.id === 'toolConfirmModal') {
-                denyTool();
-            }
+        run().catch(err => {
+            console.error('Failed to initialize WASM:', err);
+            document.getElementById('messagesContainer').innerHTML =
+                '<div class="error">Failed to load application. Please refresh the page.</div>';
         });
     </script>
 </body>

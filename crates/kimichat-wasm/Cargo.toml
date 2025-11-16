@@ -1,0 +1,60 @@
+[package]
+name = "kimichat-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlInputElement",
+    "HtmlTextAreaElement",
+    "HtmlSelectElement",
+    "HtmlButtonElement",
+    "HtmlDivElement",
+    "CssStyleDeclaration",
+    "Node",
+    "NodeList",
+    "EventTarget",
+    "Event",
+    "MouseEvent",
+    "KeyboardEvent",
+    "InputEvent",
+    "MessageEvent",
+    "WebSocket",
+    "Location",
+    "History",
+    "Storage",
+    "console",
+    "BinaryType",
+    "ErrorEvent",
+    "CloseEvent",
+] }
+js-sys = "0.3"
+gloo-net = { version = "0.6", features = ["websocket"] }
+gloo-timers = { version = "0.3", features = ["futures"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+pulldown-cmark = "0.11"
+console_error_panic_hook = "0.1"
+log = "0.4"
+wasm-logger = "0.2"
+futures = "0.3"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
