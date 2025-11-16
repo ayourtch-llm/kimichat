@@ -25,3 +25,13 @@ version = "1.0"
 [dependencies.tokio]
 features = ["full"]
 version = "1.41"
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = { workspace = true }
+mockall = { workspace = true }
+pretty_assertions = { workspace = true }
+serde_json = { workspace = true }
+wiremock = { workspace = true }
+serial_test = { workspace = true }
+env_logger = { workspace = true }

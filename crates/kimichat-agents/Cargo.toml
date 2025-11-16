@@ -22,3 +22,13 @@ kimichat-skills = { path = "../kimichat-skills" }
 kimichat-terminal = { path = "../kimichat-terminal" }
 kimichat-todo = { path = "../kimichat-todo" }
 kimichat-toolcore = { path = "../kimichat-toolcore" }
+
+[dev-dependencies]
+# Use workspace dependencies for consistency
+tokio-test = { workspace = true }
+tempfile = { workspace = true }
+pretty_assertions = { workspace = true }
+mockall = { workspace = true }
+serde_json = { workspace = true }
+proptest = { workspace = true }
+serial_test = { workspace = true }
