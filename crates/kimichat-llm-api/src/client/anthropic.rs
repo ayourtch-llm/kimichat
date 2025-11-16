@@ -1,4 +1,4 @@
-use crate::agents::agent::{LlmClient, LlmResponse, ChatMessage, ToolDefinition, StreamingChunk};
+use crate::client::{LlmClient, LlmResponse, ChatMessage, ToolDefinition, StreamingChunk, ToolCall, FunctionCall, TokenUsage};
 use anyhow::{Result, Context};
 use async_trait::async_trait;
 use serde_json::Value;
@@ -121,9 +121,9 @@ impl AnthropicLlmClient {
                         if let Some(name) = item["name"].as_str() {
                             if let Some(id) = item["id"].as_str() {
                                 let input = item["input"].clone();
-                                tool_calls.push(crate::agents::agent::ToolCall {
+                                tool_calls.push(ToolCall {
                                     id: id.to_string(),
-                                    function: crate::agents::agent::FunctionCall {
+                                    function: FunctionCall {
                                         name: name.to_string(),
                                         arguments: input.to_string(),
                                     },
@@ -204,7 +204,7 @@ impl LlmClient for AnthropicLlmClient {
         let message = self.convert_anthropic_response_to_chat_message(&response_json);
 
         let usage = response_json.get("usage").map(|u| {
-            crate::agents::agent::TokenUsage {
+            TokenUsage {
                 prompt_tokens: u["input_tokens"].as_u64().unwrap_or(0) as u32,
                 completion_tokens: u["output_tokens"].as_u64().unwrap_or(0) as u32,
                 total_tokens: (u["input_tokens"].as_u64().unwrap_or(0) +
@@ -279,7 +279,7 @@ impl LlmClient for AnthropicLlmClient {
                 match chunk_result {
                     Ok(chunk) => {
                         let chunk_str = String::from_utf8_lossy(&chunk);
-                        
+
                         // Process character by character for minimal latency
                         for ch in chunk_str.chars() {
                             buffer.push(ch);
@@ -288,7 +288,7 @@ impl LlmClient for AnthropicLlmClient {
                             // When we hit a newline, process the complete SSE line
                             if ch == '\n' {
                                 let line = std::mem::take(&mut event_buffer);
-                                
+
                                 // Parse SSE line immediately and yield if we get content
                                 if let Some(streaming_chunk) = Self::parse_sse_line(&line) {
                                     yield Ok(streaming_chunk);

@@ -5,6 +5,12 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use futures::Stream;
 
+// Re-export types from kimichat-llm-api
+pub use kimichat_llm_api::{
+    LlmClient, ChatMessage, ToolCall, FunctionCall, LlmResponse,
+    TokenUsage, ToolDefinition, StreamingChunk,
+};
+
 /// Agent capabilities
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Capability {
@@ -135,73 +141,6 @@ pub struct ExecutionContext {
     pub cancellation_token: Option<tokio_util::sync::CancellationToken>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
-    pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    pub id: String,
-    pub function: FunctionCall,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FunctionCall {
-    pub name: String,
-    pub arguments: String,
-}
-
-/// Streaming chunk for LLM responses
-#[derive(Debug, Clone)]
-pub struct StreamingChunk {
-    pub content: String,
-    pub delta: String,
-    pub finish_reason: Option<String>,
-}
-
-/// LLM client trait
-#[async_trait]
-pub trait LlmClient: Send + Sync {
-    async fn chat(&self, messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Result<LlmResponse>;
-
-    /// Simple chat completion without tools (for progress evaluation)
-    async fn chat_completion(&self, messages: &[ChatMessage]) -> Result<String>;
-
-    /// Streaming chat completion - returns a stream of chunks
-    async fn chat_streaming(&self, messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Result<Box<dyn Stream<Item = Result<StreamingChunk>> + Send + Unpin>> {
-        // Default implementation falls back to non-streaming
-        Err(anyhow::anyhow!("Streaming not implemented for this client"))
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmResponse {
-    pub message: ChatMessage,
-    pub usage: Option<TokenUsage>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenUsage {
-    pub prompt_tokens: u32,
-    pub completion_tokens: u32,
-    pub total_tokens: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
-    pub parameters: serde_json::Value,
-}
 
 /// Core agent trait
 #[async_trait]

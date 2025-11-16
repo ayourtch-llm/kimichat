@@ -1,4 +1,4 @@
-use crate::agents::agent::{LlmClient, LlmResponse, ChatMessage, ToolDefinition};
+use crate::client::{LlmClient, LlmResponse, ChatMessage, ToolDefinition, TokenUsage};
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -43,16 +43,16 @@ impl LlmClient for LlamaCppClient {
         }
 
         let response_text = response.text().await?;
-        let chat_response: crate::ChatResponse = serde_json::from_str(&response_text)?;
+        let chat_response: kimichat_models::ChatResponse = serde_json::from_str(&response_text)?;
 
         let message = if let Some(choice) = chat_response.choices.into_iter().next() {
             ChatMessage {
                 role: choice.message.role,
                 content: choice.message.content,
                 tool_calls: choice.message.tool_calls.map(|calls| {
-                    calls.into_iter().map(|call| crate::agents::agent::ToolCall {
+                    calls.into_iter().map(|call| crate::client::ToolCall {
                         id: call.id,
-                        function: crate::agents::agent::FunctionCall {
+                        function: crate::client::FunctionCall {
                             name: call.function.name,
                             arguments: call.function.arguments,
                         },
@@ -75,7 +75,7 @@ impl LlmClient for LlamaCppClient {
 
         Ok(LlmResponse {
             message,
-            usage: chat_response.usage.map(|usage| crate::agents::agent::TokenUsage {
+            usage: chat_response.usage.map(|usage| TokenUsage {
                 prompt_tokens: usage.prompt_tokens as u32,
                 completion_tokens: usage.completion_tokens as u32,
                 total_tokens: usage.total_tokens as u32,
@@ -118,15 +118,15 @@ impl LlmClient for LlamaCppClient {
 
 impl LlamaCppClient {
     async fn build_chat_request(&self, messages: Vec<ChatMessage>, tools: Vec<ToolDefinition>) -> Result<serde_json::Value> {
-        let chat_messages: Vec<crate::Message> = messages.into_iter().map(|msg| {
-            crate::Message {
+        let chat_messages: Vec<kimichat_models::Message> = messages.into_iter().map(|msg| {
+            kimichat_models::Message {
                 role: msg.role,
                 content: msg.content,
                 tool_calls: msg.tool_calls.map(|calls| {
-                    calls.into_iter().map(|call| crate::ToolCall {
+                    calls.into_iter().map(|call| kimichat_models::ToolCall {
                         id: call.id,
                         tool_type: "function".to_string(),
-                        function: crate::FunctionCall {
+                        function: kimichat_models::FunctionCall {
                             name: call.function.name,
                             arguments: call.function.arguments,
                         },
@@ -138,10 +138,10 @@ impl LlamaCppClient {
             }
         }).collect();
 
-        let tool_definitions: Vec<crate::Tool> = tools.into_iter().map(|tool| {
-            crate::Tool {
+        let tool_definitions: Vec<kimichat_models::Tool> = tools.into_iter().map(|tool| {
+            kimichat_models::Tool {
                 tool_type: "function".to_string(),
-                function: crate::FunctionDef {
+                function: kimichat_models::FunctionDef {
                     name: tool.name,
                     description: tool.description,
                     parameters: tool.parameters,

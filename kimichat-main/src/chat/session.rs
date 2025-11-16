@@ -36,7 +36,7 @@ pub(crate) async fn chat(
         let blu_model_url = crate::config::get_api_url(&chat.client_config, &ModelType::BluModel);
         let blu_model_key = crate::config::get_api_key(&chat.client_config, &chat.api_key, &ModelType::BluModel);
         let mut progress_evaluator = Some(crate::agents::progress_evaluator::ProgressEvaluator::new(
-            std::sync::Arc::new(crate::agents::groq_client::GroqLlmClient::new(
+            std::sync::Arc::new(crate::agents::GroqLlmClient::new(
                 blu_model_key,
                 "kimi".to_string(),
                 blu_model_url,

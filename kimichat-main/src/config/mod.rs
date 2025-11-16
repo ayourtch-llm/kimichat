@@ -13,40 +13,8 @@ use kimichat_models::ModelType;
 pub mod helpers;
 pub use helpers::{get_system_prompt, get_api_url, get_api_key, create_model_client};
 
-// Re-export the Groq API URL constant
-pub const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
-
-/// Backend type for LLM models
-#[derive(Debug, Clone, PartialEq)]
-pub enum BackendType {
-    Groq,
-    Anthropic,
-    Llama,
-    OpenAI,
-}
-
-impl BackendType {
-    /// Parse backend type from string
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "groq" => Some(Self::Groq),
-            "anthropic" | "claude" => Some(Self::Anthropic),
-            "llama" | "llamacpp" | "llama.cpp" | "llama-cpp" => Some(Self::Llama),
-            "openai" => Some(Self::OpenAI),
-            _ => None,
-        }
-    }
-
-    /// Get string representation
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::Groq => "groq",
-            Self::Anthropic => "anthropic",
-            Self::Llama => "llama",
-            Self::OpenAI => "openai",
-        }
-    }
-}
+// Re-export types from kimichat-llm-api
+pub use kimichat_llm_api::{BackendType, GROQ_API_URL, normalize_api_url};
 
 /// Configuration for KimiChat client
 #[derive(Debug, Clone)]
@@ -79,22 +47,6 @@ pub struct ClientConfig {
     pub model_grn_model_override: Option<String>,
     /// Override for 'red_model' model name
     pub model_red_model_override: Option<String>,
-}
-
-/// Normalize API URL by ensuring it has the correct path for OpenAI-compatible endpoints
-pub fn normalize_api_url(url: &str) -> String {
-    // If URL already contains a path with "completions", use it as-is
-    if url.contains("/completions") || url.contains("/chat") {
-        return url.to_string();
-    }
-
-    // If URL ends with a slash, append path without leading slash
-    if url.ends_with('/') {
-        format!("{}v1/chat/completions", url)
-    } else {
-        // Append the standard OpenAI-compatible path
-        format!("{}/v1/chat/completions", url)
-    }
 }
 
 /// Initialize the tool registry with all available tools

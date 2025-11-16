@@ -302,7 +302,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
             if let Some(ref api_url) = chat.client_config.api_url_blu_model {
                 if api_url.contains("anthropic") {
                     println!("{} Using Anthropic streaming API for 'blu_model' at: {}", "🧠".cyan(), api_url);
-                    std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                    std::sync::Arc::new(crate::agents::AnthropicLlmClient::new(
                         chat.client_config.api_key_blu_model.clone().unwrap_or_default(),
                         model.as_str(),
                         api_url.clone(),
@@ -310,7 +310,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                     ))
                 } else {
                     println!("{} Using llama.cpp for 'blu_model' at: {}", "🦙".cyan(), api_url);
-                    std::sync::Arc::new(crate::agents::llama_cpp_client::LlamaCppClient::new(
+                    std::sync::Arc::new(crate::agents::LlamaCppClient::new(
                         api_url.clone(),
                         model.as_str()
                     ))
@@ -324,7 +324,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                 let anthropic_key = env::var("ANTHROPIC_AUTH_TOKEN_BLU")
                     .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN"))
                     .unwrap_or_default();
-                std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                std::sync::Arc::new(crate::agents::AnthropicLlmClient::new(
                     anthropic_key,
                     model.as_str(),
                     "https://api.anthropic.com".to_string(),
@@ -332,7 +332,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                 ))
             } else {
                 println!("{} Using Groq API for 'blu_model'", "🚀".cyan());
-                std::sync::Arc::new(crate::agents::groq_client::GroqLlmClient::new(
+                std::sync::Arc::new(crate::agents::GroqLlmClient::new(
                     chat.client_config.api_key.clone(),
                     model.as_str(),
                     crate::GROQ_API_URL.to_string(),
@@ -353,7 +353,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                 .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_GRN"))
                 .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_RED"))
                 .unwrap_or_else(|_| chat.client_config.api_key.clone());
-            std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+            std::sync::Arc::new(crate::agents::AnthropicLlmClient::new(
                 api_key,
                 model.as_str(),
                 api_url,
@@ -364,7 +364,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
             if let Some(ref api_url) = chat.client_config.api_url_red_model {
                 if api_url.contains("anthropic") {
                     println!("{} Using Anthropic streaming API for 'red_model' at: {}", "🧠".cyan(), api_url);
-                    std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                    std::sync::Arc::new(crate::agents::AnthropicLlmClient::new(
                         chat.client_config.api_key_red_model.clone().unwrap_or_default(),
                         model.as_str(),
                         api_url.clone(),
@@ -372,7 +372,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                     ))
                 } else {
                     println!("{} Using llama.cpp for 'red_model' at: {}", "🦙".cyan(), api_url);
-                    std::sync::Arc::new(crate::agents::llama_cpp_client::LlamaCppClient::new(
+                    std::sync::Arc::new(crate::agents::LlamaCppClient::new(
                         api_url.clone(),
                         model.as_str()
                     ))
@@ -386,7 +386,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                 let anthropic_key = env::var("ANTHROPIC_AUTH_TOKEN_RED")
                     .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN"))
                     .unwrap_or_default();
-                std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                std::sync::Arc::new(crate::agents::AnthropicLlmClient::new(
                     anthropic_key,
                     model.as_str(),
                     "https://api.anthropic.com".to_string(),
@@ -394,7 +394,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                 ))
             } else {
                 println!("{} Using Groq API for 'red_model'", "🚀".cyan());
-                std::sync::Arc::new(crate::agents::groq_client::GroqLlmClient::new(
+                std::sync::Arc::new(crate::agents::GroqLlmClient::new(
                     chat.client_config.api_key.clone(),
                     model.as_str(),
                     crate::GROQ_API_URL.to_string(),
@@ -406,7 +406,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
             if let Some(ref api_url) = chat.client_config.api_url_grn_model {
                 if api_url.contains("anthropic") {
                     println!("{} Using Anthropic streaming API for 'grn_model' at: {}", "🧠".cyan(), api_url);
-                    std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                    std::sync::Arc::new(crate::agents::AnthropicLlmClient::new(
                         chat.client_config.api_key_grn_model.clone().unwrap_or_default(),
                         model.as_str(),
                         api_url.clone(),
@@ -414,7 +414,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                     ))
                 } else {
                     println!("{} Using llama.cpp for 'grn_model' at: {}", "🦙".cyan(), api_url);
-                    std::sync::Arc::new(crate::agents::llama_cpp_client::LlamaCppClient::new(
+                    std::sync::Arc::new(crate::agents::LlamaCppClient::new(
                         api_url.clone(),
                         model.as_str()
                     ))
@@ -428,7 +428,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                 let anthropic_key = env::var("ANTHROPIC_AUTH_TOKEN_GRN")
                     .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN"))
                     .unwrap_or_default();
-                std::sync::Arc::new(crate::agents::anthropic_client::AnthropicLlmClient::new(
+                std::sync::Arc::new(crate::agents::AnthropicLlmClient::new(
                     anthropic_key,
                     model.as_str(),
                     "https://api.anthropic.com".to_string(),
@@ -436,7 +436,7 @@ pub(crate) async fn call_api_streaming_with_llm_client(
                 ))
             } else {
                 println!("{} Using Groq API for 'grn_model'", "🚀".cyan());
-                std::sync::Arc::new(crate::agents::groq_client::GroqLlmClient::new(
+                std::sync::Arc::new(crate::agents::GroqLlmClient::new(
                     chat.client_config.api_key.clone(),
                     model.as_str(),
                     crate::GROQ_API_URL.to_string(),

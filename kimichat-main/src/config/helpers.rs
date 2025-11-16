@@ -1,9 +1,12 @@
 use std::env;
 use std::sync::Arc;
 
-use crate::config::{ClientConfig, GROQ_API_URL, normalize_api_url, BackendType};
+use crate::config::{ClientConfig, normalize_api_url};
 use kimichat_models::ModelType;
-use crate::agents::{LlmClient, AnthropicLlmClient, GroqLlmClient, LlamaCppClient};
+use kimichat_llm_api::{
+    LlmClient, BackendType, GROQ_API_URL,
+    client::{anthropic::AnthropicLlmClient, groq::GroqLlmClient, llama_cpp::LlamaCppClient},
+};
 use colored::Colorize;
 
 /// Generate system prompt based on current model

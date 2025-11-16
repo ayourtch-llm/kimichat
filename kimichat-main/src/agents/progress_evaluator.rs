@@ -72,7 +72,7 @@ pub struct ProgressEvaluator {
     min_confidence: f32,
     eval_interval: u32,
     last_eval_iteration: u32,
-    llm_client: Option<std::sync::Arc<crate::agents::groq_client::GroqLlmClient>>,
+    llm_client: Option<std::sync::Arc<crate::agents::GroqLlmClient>>,
 }
 
 #[derive(Debug, Clone)]
@@ -93,7 +93,7 @@ pub struct StrategyRecord {
 
 impl ProgressEvaluator {
     pub fn new(
-        llm_client: std::sync::Arc<crate::agents::groq_client::GroqLlmClient>,
+        llm_client: std::sync::Arc<crate::agents::GroqLlmClient>,
         min_confidence: f32,
         eval_interval: u32,
     ) -> Self {

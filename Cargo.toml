@@ -3,6 +3,7 @@ members = [
     "kimichat-main",
     "crates/kimichat-models",
     "crates/kimichat-logging",
+    "crates/kimichat-llm-api",
     "crates/kimichat-todo",
     "crates/kimichat-policy",
     "crates/kimichat-skills",
