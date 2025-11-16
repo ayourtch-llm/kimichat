@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::policy::PolicyManager;
+use kimichat_policy::PolicyManager;
 use crate::terminal::TerminalManager;
 use crate::skills::SkillRegistry;
 use kimichat_todo::TodoManager;
@@ -73,11 +73,11 @@ impl ToolContext {
     /// Returns (approved: bool, rejection_reason: Option<String>)
     pub fn check_permission(
         &self,
-        action: crate::policy::ActionType,
+        action: kimichat_policy::ActionType,
         target: &str,
         prompt_message: &str,
     ) -> anyhow::Result<(bool, Option<String>)> {
-        use crate::policy::Decision;
+        use kimichat_policy::Decision;
         use colored::Colorize;
         use std::io::{self, BufRead, Write};
 

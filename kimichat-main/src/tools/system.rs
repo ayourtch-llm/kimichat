@@ -51,7 +51,7 @@ impl Tool for RunCommandTool {
         std::io::stdout().flush().ok();
 
         let (approved, rejection_reason) = match context.check_permission(
-            crate::policy::ActionType::CommandExecution,
+            kimichat_policy::ActionType::CommandExecution,
             &command,
             "Execute? (y/N):"
         ) {

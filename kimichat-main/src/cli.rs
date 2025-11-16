@@ -7,7 +7,7 @@ use std::pin::Pin;
 
 use crate::core::tool::{Tool, ToolParameters};
 use crate::core::tool_context::ToolContext;
-use crate::policy::PolicyManager;
+use kimichat_policy::PolicyManager;
 use crate::tools::file_ops::*;
 use crate::tools::system::*;
 use crate::tools::search::*;

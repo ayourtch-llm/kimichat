@@ -4,7 +4,7 @@ use colored::Colorize;
 use crate::KimiChat;
 use crate::cli::Cli;
 use crate::config::ClientConfig;
-use crate::policy::PolicyManager;
+use kimichat_policy::PolicyManager;
 use kimichat_logging::ConversationLogger;
 use std::path::PathBuf;
 

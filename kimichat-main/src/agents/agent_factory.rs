@@ -11,11 +11,11 @@ use colored::Colorize;
 pub struct AgentFactory {
     tool_registry: Arc<ToolRegistry>,
     llm_clients: HashMap<String, Arc<dyn LlmClient>>,
-    policy_manager: crate::policy::PolicyManager,
+    policy_manager: kimichat_policy::PolicyManager,
 }
 
 impl AgentFactory {
-    pub fn new(tool_registry: Arc<ToolRegistry>, policy_manager: crate::policy::PolicyManager) -> Self {
+    pub fn new(tool_registry: Arc<ToolRegistry>, policy_manager: kimichat_policy::PolicyManager) -> Self {
         Self {
             tool_registry,
             llm_clients: HashMap::new(),
@@ -58,7 +58,7 @@ pub struct ConfigurableAgent {
     config: AgentConfig,
     tool_registry: Arc<ToolRegistry>,
     llm_client: Arc<dyn LlmClient>,
-    policy_manager: crate::policy::PolicyManager,
+    policy_manager: kimichat_policy::PolicyManager,
 }
 
 impl ConfigurableAgent {
@@ -66,7 +66,7 @@ impl ConfigurableAgent {
         config: AgentConfig,
         tool_registry: Arc<ToolRegistry>,
         llm_client: Arc<dyn LlmClient>,
-        policy_manager: crate::policy::PolicyManager,
+        policy_manager: kimichat_policy::PolicyManager,
     ) -> Result<Self> {
         // Validate that all required tools are available
         for tool_name in &config.tools {

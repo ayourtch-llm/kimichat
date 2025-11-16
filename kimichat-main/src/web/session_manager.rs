@@ -7,7 +7,7 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 use uuid::Uuid;
 
 use crate::config::ClientConfig;
-use crate::policy::PolicyManager;
+use kimichat_policy::PolicyManager;
 use crate::web::protocol::{ServerMessage, SessionConfig, SessionInfo};
 use crate::KimiChat;
 

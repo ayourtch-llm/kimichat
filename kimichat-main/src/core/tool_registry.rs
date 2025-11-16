@@ -158,7 +158,7 @@ mod tests {
         let context = ToolContext::new(
             std::path::PathBuf::from("/tmp"),
             "test_session".to_string(),
-            crate::policy::PolicyManager::new(),
+            kimichat_policy::PolicyManager::new(),
         );
         let result = registry.execute_tool("test_tool", params, &context).await;
         assert!(result.success);

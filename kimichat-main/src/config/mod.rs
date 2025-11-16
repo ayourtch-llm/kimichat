@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::sync::Arc;
 
 use crate::core::ToolRegistry;
-use crate::policy::PolicyManager;
+use kimichat_policy::PolicyManager;
 use crate::tools::*;
 use crate::terminal::*;
 use crate::agents::{

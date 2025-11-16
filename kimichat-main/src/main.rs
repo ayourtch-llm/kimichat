@@ -12,7 +12,6 @@ use clap::Parser;
 mod open_file;
 mod preview;
 mod core;
-mod policy;
 mod tools;
 mod agents;
 mod tools_execution;
@@ -26,9 +25,9 @@ mod skills;
 mod web;
 
 use kimichat_logging::ConversationLogger;
+use kimichat_policy::PolicyManager;
 use core::{ToolRegistry, ToolParameters};
 use core::tool_context::ToolContext;
-use policy::PolicyManager;
 use cli::{Cli, Commands};
 use config::{ClientConfig, GROQ_API_URL, initialize_tool_registry, initialize_agent_system};
 use chat::{save_state, load_state};

@@ -292,7 +292,7 @@ impl Tool for EditFileTool {
 
         // Check permission using policy system
         let (approved, rejection_reason) = match context.check_permission(
-            crate::policy::ActionType::FileEdit,
+            kimichat_policy::ActionType::FileEdit,
             &file_path,
             "Apply these changes? [Y/n]"
         ) {
