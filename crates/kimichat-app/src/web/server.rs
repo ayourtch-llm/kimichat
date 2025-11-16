@@ -8,7 +8,7 @@ use tower_http::{
     services::ServeDir,
 };
 
-use crate::config::ClientConfig;
+use crate::ClientConfig;
 use kimichat_policy::PolicyManager;
 use crate::web::{routes, session_manager::SessionManager};
 

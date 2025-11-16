@@ -2,8 +2,8 @@ use anyhow::Result;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use crate::cli::Cli;
-use crate::config::ClientConfig;
+use crate::Cli;
+use crate::ClientConfig;
 use kimichat_policy::PolicyManager;
 use crate::web::server::{WebServer, WebServerConfig};
 

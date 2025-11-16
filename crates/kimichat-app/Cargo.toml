@@ -8,7 +8,7 @@ name = "kimichat"
 path = "src/lib.rs"
 
 [[bin]]
-name = "kimichat"
+name = "kimichat-cli"
 path = "src/main.rs"
 
 [dependencies]

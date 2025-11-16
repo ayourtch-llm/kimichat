@@ -166,15 +166,33 @@ impl KimiChat {
     pub fn resolve_terminal_backend(cli: &Cli) -> Result<terminal::backend::TerminalBackendType> {
         use terminal::backend::TerminalBackendType;
 
-        // Check CLI argument first, then environment variable
+        // Get backend string from CLI or env var
         let env_backend = env::var("KIMICHAT_TERMINAL_BACKEND").ok();
         let backend_str = cli.terminal_backend.as_deref()
-            .or_else(|| env_backend.as_deref());
+            .or_else(|| env_backend.as_deref())
+            .unwrap_or("pty");
 
-        match backend_str {
-            Some("tmux") => Ok(TerminalBackendType::Tmux),
-            Some("pty") | None => Ok(TerminalBackendType::Pty),
-            Some(other) => anyhow::bail!("Unknown terminal backend: {}", other),
+        match backend_str.to_lowercase().as_str() {
+            "pty" => Ok(TerminalBackendType::Pty),
+            "tmux" => {
+                // Check if tmux is available
+                if let Ok(output) = std::process::Command::new("tmux").arg("-V").output() {
+                    if output.status.success() {
+                        Ok(TerminalBackendType::Tmux)
+                    } else {
+                        anyhow::bail!(
+                            "Tmux backend requested but 'tmux -V' failed. Please ensure tmux is installed and working."
+                        )
+                    }
+                } else {
+                    anyhow::bail!(
+                        "Tmux backend requested but tmux command not found. Please install tmux or use --terminal-backend pty"
+                    )
+                }
+            }
+            other => anyhow::bail!(
+                "Invalid terminal backend '{}'. Valid options: pty, tmux", other
+            ),
         }
     }
 

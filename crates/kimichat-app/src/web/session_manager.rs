@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use uuid::Uuid;
 
-use crate::config::ClientConfig;
+use crate::ClientConfig;
 use kimichat_models::Message;
 use kimichat_policy::PolicyManager;
 use crate::web::protocol::{ServerMessage, SessionConfig, SessionInfo};

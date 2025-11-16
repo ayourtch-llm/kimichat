@@ -6,8 +6,8 @@ use std::env;
 use std::path::PathBuf;
 
 use crate::KimiChat;
-use crate::cli::Cli;
-use crate::config::ClientConfig;
+use crate::Cli;
+use crate::ClientConfig;
 use kimichat_policy::PolicyManager;
 use crate::ConversationLogger;
 use kimichat_types::{ModelType, Message};
