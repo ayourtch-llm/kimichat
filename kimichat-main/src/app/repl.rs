@@ -9,7 +9,7 @@ use crate::KimiChat;
 use crate::cli::Cli;
 use crate::config::ClientConfig;
 use crate::policy::PolicyManager;
-use crate::logging::ConversationLogger;
+use kimichat_logging::ConversationLogger;
 use kimichat_models::{ModelType, Message};
 
 /// Run interactive REPL mode

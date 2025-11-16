@@ -5,7 +5,7 @@ use crate::KimiChat;
 use crate::cli::Cli;
 use crate::config::ClientConfig;
 use crate::policy::PolicyManager;
-use crate::logging::ConversationLogger;
+use kimichat_logging::ConversationLogger;
 use std::path::PathBuf;
 
 /// Run in task mode - execute a single task and exit

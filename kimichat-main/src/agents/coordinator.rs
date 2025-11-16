@@ -2,7 +2,7 @@ use crate::agents::agent::{Agent, Task, TaskType, TaskPriority, AgentResult, Exe
 use crate::agents::agent_factory::AgentFactory;
 use crate::agents::agent_config::AgentConfig;
 use crate::agents::visibility::{VisibilityManager, ExecutionPhase};
-use crate::chat::history::safe_truncate;
+use kimichat_logging::safe_truncate;
 use anyhow::Result;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;

@@ -1,6 +1,6 @@
 use crate::agents::agent::{Agent, ExecutionContext, LlmClient};
 use crate::agents::agent_config::AgentConfig;
-use crate::chat::history::safe_truncate;
+use kimichat_logging::safe_truncate;
 use crate::core::tool_registry::ToolRegistry;
 use anyhow::Result;
 use std::collections::HashMap;

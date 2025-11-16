@@ -4,7 +4,7 @@ use regex::Regex;
 
 use crate::KimiChat;
 use kimichat_models::{ModelType, Message, ToolCall, FunctionCall, ChatRequest, ChatResponse};
-use crate::logging::log_request_to_file;
+use kimichat_logging::log_request_to_file;
 
 /// Repair a malformed tool call using AI to fix the JSON arguments
 pub(crate) async fn repair_tool_call_with_model(

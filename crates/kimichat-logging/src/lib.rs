@@ -12,3 +12,12 @@ pub use request_logger::{
     log_response,
     log_stream_chunk,
 };
+
+/// Safely truncate a string to a maximum number of characters
+pub fn safe_truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        s.chars().take(max_chars).collect()
+    }
+}

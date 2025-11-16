@@ -3,7 +3,7 @@ use colored::Colorize;
 
 use crate::KimiChat;
 use kimichat_models::{ModelType, Message};
-use crate::chat::history::safe_truncate;
+use kimichat_logging::safe_truncate;
 
 /// Main chat loop - handles user messages, tool calls, and model interactions
 pub(crate) async fn chat(

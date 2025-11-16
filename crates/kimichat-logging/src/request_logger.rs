@@ -4,7 +4,7 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use kimichat_models::{ChatRequest, ModelType};
-use crate::chat::history::safe_truncate;
+use crate::safe_truncate;
 
 /// Log HTTP request details for debugging (console output)
 pub fn log_request(url: &str, request: &ChatRequest, api_key: &str, verbose: bool) {

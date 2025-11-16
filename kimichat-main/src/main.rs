@@ -9,7 +9,6 @@ use tokio::sync::Mutex;
 use clap::Parser;
 
 
-mod logging;
 mod open_file;
 mod preview;
 mod core;
@@ -27,7 +26,7 @@ mod skills;
 mod todo;
 mod web;
 
-use logging::ConversationLogger;
+use kimichat_logging::ConversationLogger;
 use core::{ToolRegistry, ToolParameters};
 use core::tool_context::ToolContext;
 use policy::PolicyManager;

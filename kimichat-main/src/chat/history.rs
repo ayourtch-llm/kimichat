@@ -3,17 +3,7 @@ use colored::Colorize;
 
 use crate::KimiChat;
 use kimichat_models::{ModelType, Message, ChatRequest, ChatResponse};
-use crate::logging::log_request_to_file;
-
-/// Safely truncate a string at a char boundary (not byte boundary)
-/// This prevents panics when truncating strings with multibyte UTF-8 chars (emojis, etc.)
-pub(crate) fn safe_truncate(s: &str, max_chars: usize) -> String {
-    if s.chars().count() <= max_chars {
-        s.to_string()
-    } else {
-        s.chars().take(max_chars).collect()
-    }
-}
+use kimichat_logging::{log_request_to_file, safe_truncate};
 
 /// Summarize and trim conversation history when it gets too long
 /// Uses another model to summarize the middle portion of the conversation
