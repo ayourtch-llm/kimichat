@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::{param, core::tool::{Tool, ToolParameters, ToolResult, ParameterDefinition}};
 use crate::core::tool_context::ToolContext;
-// TODO: use crate::todo::{Task, TaskStatus};
+use kimichat_types::todo::{Task, TaskStatus};
 
 /// Tool for managing the todo list
 pub struct TodoWriteTool;

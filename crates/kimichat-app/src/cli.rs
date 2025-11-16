@@ -7,7 +7,8 @@ use std::pin::Pin;
 
 use kimichat_tools::core::tool::{Tool, ToolParameters};
 use kimichat_tools::core::tool_context::ToolContext;
-use kimichat_tools::tools::{SearchFilesTool, RunCommandTool};
+use kimichat_tools::tools::{SearchFilesTool, RunCommandTool, OpenFileTool, ReadFileTool, WriteFileTool, EditFileTool, ListFilesTool};
+use kimichat_tools::terminal_tools::{PtyLaunchTool, PtySendKeysTool, PtyGetScreenTool, PtyListTool, PtyKillTool};
 use kimichat_policy::PolicyManager;
 
 // Note: KimiChat is needed for the Switch command
@@ -271,7 +272,12 @@ impl Commands {
                     let mut params = ToolParameters::new();
                     params.set("file_path", file_path);
                     let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    anyhow::bail!("ReadFileTool is temporarily disabled during workspace migration");
+                    let result = ReadFileTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::Write { file_path, content } => {
@@ -283,7 +289,12 @@ impl Commands {
                     params.set("file_path", file_path);
                     params.set("content", content);
                     let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    anyhow::bail!("WriteFileTool is temporarily disabled during workspace migration");
+                    let result = WriteFileTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::Edit { file_path, old_content, new_content } => {
@@ -297,7 +308,12 @@ impl Commands {
                     params.set("old_content", old_content);
                     params.set("new_content", new_content);
                     let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    anyhow::bail!("EditFileTool is temporarily disabled during workspace migration");
+                    let result = EditFileTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::List { pattern } => {
@@ -307,7 +323,12 @@ impl Commands {
                     let mut params = ToolParameters::new();
                     params.set("pattern", pattern);
                     let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    anyhow::bail!("ListFilesTool is temporarily disabled during workspace migration");
+                    let result = ListFilesTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::Search { query, pattern, regex, case_insensitive, max_results } => {
@@ -372,7 +393,12 @@ impl Commands {
                         params.set("end_line", end as i64);
                     }
                     let context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
-                    anyhow::bail!("OpenFileTool is temporarily disabled during workspace migration");
+                    let result = OpenFileTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             Commands::Terminal { .. } => {
@@ -408,7 +434,12 @@ impl TerminalCommands {
                     let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
                     context = context.with_terminal_manager(terminal_manager);
 
-                    anyhow::bail!("PTY tools are temporarily disabled during workspace migration");
+                    let result = PtyLaunchTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             TerminalCommands::View { session_id } => {
@@ -421,7 +452,12 @@ impl TerminalCommands {
                     let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
                     context = context.with_terminal_manager(terminal_manager);
 
-                    anyhow::bail!("PTY tools are temporarily disabled during workspace migration");
+                    let result = PtyGetScreenTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             TerminalCommands::List => {
@@ -432,7 +468,12 @@ impl TerminalCommands {
                     let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
                     context = context.with_terminal_manager(terminal_manager);
 
-                    anyhow::bail!("PTY tools are temporarily disabled during workspace migration");
+                    let result = PtyListTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             TerminalCommands::Kill { session_id } => {
@@ -445,7 +486,12 @@ impl TerminalCommands {
                     let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
                     context = context.with_terminal_manager(terminal_manager);
 
-                    anyhow::bail!("PTY tools are temporarily disabled during workspace migration");
+                    let result = PtyKillTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
             TerminalCommands::Send { session_id, keys } => {
@@ -461,7 +507,12 @@ impl TerminalCommands {
                     let mut context = ToolContext::new(work_dir, "cli_session".to_string(), PolicyManager::new());
                     context = context.with_terminal_manager(terminal_manager);
 
-                    anyhow::bail!("PTY tools are temporarily disabled during workspace migration");
+                    let result = PtySendKeysTool.execute(params, &context).await;
+                    if result.success {
+                        Ok(result.content)
+                    } else {
+                        Err(anyhow::anyhow!("{}", result.error.unwrap_or_default()))
+                    }
                 })
             }
         }

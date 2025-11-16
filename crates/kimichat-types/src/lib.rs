@@ -6,6 +6,17 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
 // ============================================================================
+// Utility Modules
+// ============================================================================
+
+pub mod open_file;
+pub mod todo;
+
+// Re-export commonly used items
+pub use open_file::{open_file, OpenFileError, MAX_FILE_SIZE};
+pub use todo::{Task, TaskStatus, TodoManager};
+
+// ============================================================================
 // Constants
 // ============================================================================
 

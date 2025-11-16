@@ -1,7 +1,7 @@
 use crate::{param, core::tool::{Tool, ToolParameters, ToolResult, ParameterDefinition}};
 use crate::core::tool_context::ToolContext;
 use crate::tools::helpers::build_glob_pattern;
-// TODO: use crate::open_file;
+use kimichat_types::open_file;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs;
@@ -293,7 +293,7 @@ impl Tool for EditFileTool {
 
         // Check permission using policy system
         let (approved, rejection_reason) = match context.check_permission(
-            crate::policy::ActionType::FileEdit,
+            kimichat_policy::ActionType::FileEdit,
             &file_path,
             "Apply these changes? [Y/n]"
         ) {

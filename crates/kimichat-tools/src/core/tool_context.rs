@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use kimichat_policy::PolicyManager;
 use kimichat_terminal::TerminalManager;
 use kimichat_skills::SkillRegistry;
-// TODO: use crate::todo::TodoManager;
+use kimichat_types::todo::TodoManager;
 
 /// Tool execution context
 ///
@@ -26,7 +26,7 @@ pub struct ToolContext {
     pub policy_manager: PolicyManager,
     pub terminal_manager: Option<Arc<Mutex<TerminalManager>>>,
     pub skill_registry: Option<Arc<SkillRegistry>>,
-    // TODO: pub todo_manager: Option<Arc<TodoManager>>,
+    pub todo_manager: Option<Arc<TodoManager>>,
     pub non_interactive: bool,
 }
 
@@ -39,7 +39,7 @@ impl ToolContext {
             policy_manager,
             terminal_manager: None,
             skill_registry: None,
-            // todo_manager: None,
+            todo_manager: None,
             non_interactive: false,
         }
     }
@@ -64,10 +64,10 @@ impl ToolContext {
         self
     }
 
-    //     // TODO: pub fn with_todo_manager(mut self, todo_manager: Arc<TodoManager>) -> Self {
-    //         self.todo_manager = Some(todo_manager);
-    //         self
-    //     }
+    pub fn with_todo_manager(mut self, todo_manager: Arc<TodoManager>) -> Self {
+        self.todo_manager = Some(todo_manager);
+        self
+    }
 
     /// Check if an action is permitted by the policy
     /// Returns (approved: bool, rejection_reason: Option<String>)
