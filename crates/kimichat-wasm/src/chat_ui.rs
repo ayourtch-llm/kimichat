@@ -24,6 +24,7 @@ struct ChatState {
     current_assistant_message: Option<String>,
     current_message_element: Option<Element>,
     active_tasks: std::collections::HashMap<String, TaskInfo>,
+    sink: Option<Rc<RefCell<futures::stream::SplitSink<WebSocket, gloo_net::websocket::Message>>>>,
 }
 
 struct TaskInfo {
@@ -45,6 +46,7 @@ impl ChatApp {
             current_assistant_message: None,
             current_message_element: None,
             active_tasks: std::collections::HashMap::new(),
+            sink: None,
         };
 
         Ok(Self {
@@ -87,6 +89,7 @@ impl ChatApp {
 
         // Set up message sender for UI events
         let sink = Rc::new(RefCell::new(sink));
+        state.borrow_mut().sink = Some(sink.clone());
         self.setup_message_sender(sink.clone())?;
 
         // Process incoming messages
@@ -215,6 +218,7 @@ impl ChatApp {
             } => {
                 self.handle_tool_request(
                     document,
+                    state,
                     tool_call_id,
                     name,
                     arguments,
@@ -455,6 +459,7 @@ impl ChatApp {
     fn handle_tool_request(
         &self,
         document: &Document,
+        state: &Rc<RefCell<ChatState>>,
         tool_call_id: String,
         name: String,
         arguments: serde_json::Value,
@@ -497,9 +502,9 @@ impl ChatApp {
 
         if requires_confirmation {
             html.push_str(&format!(
-                r#"<div class="tool-confirmation">
-                    <button class="confirm-btn" data-tool-id="{}">Confirm</button>
-                    <button class="deny-btn" data-tool-id="{}">Deny</button>
+                r#"<div class="tool-confirmation-actions">
+                    <button class="tool-confirm-btn confirm" data-tool-id="{}">✓ Confirm</button>
+                    <button class="tool-confirm-btn deny" data-tool-id="{}">✗ Deny</button>
                 </div>"#,
                 tool_call_id, tool_call_id
             ));
@@ -512,7 +517,7 @@ impl ChatApp {
 
         // Set up confirmation buttons if needed
         if requires_confirmation {
-            self.setup_tool_confirmation_buttons(document, &tool_call_id)?;
+            self.setup_tool_confirmation_buttons(document, state, &tool_call_id)?;
         }
 
         dom::scroll_to_bottom(&container);
@@ -520,9 +525,66 @@ impl ChatApp {
         Ok(())
     }
 
-    fn setup_tool_confirmation_buttons(&self, _document: &Document, _tool_call_id: &str) -> Result<(), JsValue> {
-        // This would set up the click handlers for confirm/deny buttons
-        // Implementation would be similar to other event handlers
+    fn setup_tool_confirmation_buttons(
+        &self,
+        document: &Document,
+        state: &Rc<RefCell<ChatState>>,
+        tool_call_id: &str
+    ) -> Result<(), JsValue> {
+        let tool_id = tool_call_id.to_string();
+
+        // Get the sink from state
+        let sink = state.borrow().sink.clone();
+        if sink.is_none() {
+            log::error!("WebSocket sink not available for tool confirmation");
+            return Ok(());
+        }
+        let sink = sink.unwrap();
+
+        // Find the confirm button
+        if let Ok(Some(btn)) = document.query_selector(&format!("button.confirm[data-tool-id='{}']", tool_id)) {
+            let tool_id_clone = tool_id.clone();
+            let sink_clone = sink.clone();
+            let closure = Closure::wrap(Box::new(move |_event: web_sys::Event| {
+                let tool_id = tool_id_clone.clone();
+                let sink = sink_clone.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let msg = ClientMessage::ConfirmTool {
+                        tool_call_id: tool_id,
+                        confirmed: true,
+                    };
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        let _ = sink.borrow_mut().send(gloo_net::websocket::Message::Text(json)).await;
+                    }
+                });
+            }) as Box<dyn FnMut(_)>);
+
+            btn.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())?;
+            closure.forget();
+        }
+
+        // Find the deny button
+        if let Ok(Some(btn)) = document.query_selector(&format!("button.deny[data-tool-id='{}']", tool_id)) {
+            let tool_id_clone = tool_id.clone();
+            let sink_clone = sink.clone();
+            let closure = Closure::wrap(Box::new(move |_event: web_sys::Event| {
+                let tool_id = tool_id_clone.clone();
+                let sink = sink_clone.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let msg = ClientMessage::ConfirmTool {
+                        tool_call_id: tool_id,
+                        confirmed: false,
+                    };
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        let _ = sink.borrow_mut().send(gloo_net::websocket::Message::Text(json)).await;
+                    }
+                });
+            }) as Box<dyn FnMut(_)>);
+
+            btn.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())?;
+            closure.forget();
+        }
+
         Ok(())
     }
 
