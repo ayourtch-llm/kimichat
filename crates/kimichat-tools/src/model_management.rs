@@ -145,18 +145,23 @@ impl Tool for PlanEditsTool {
 
     fn parameters(&self) -> HashMap<String, ParameterDefinition> {
         HashMap::from([
-            param!("edits", "array", "Array of edit operations with file_path, old_content, new_content, and description fields", required),
+            param!("edits", "string", "JSON array of edit operations with file_path, old_content, new_content, and description fields", required),
         ])
     }
 
     async fn execute(&self, params: ToolParameters, context: &ToolContext) -> ToolResult {
         // Parse edits from parameters
-        let edits_value = match params.data.get("edits") {
-            Some(value) => value,
-            None => return ToolResult::error("Edits parameter is required".to_string()),
+        let edits_str = match params.get_required::<String>("edits") {
+            Ok(edits) => edits,
+            Err(e) => return ToolResult::error(e.to_string()),
         };
 
-        let edits: Vec<EditOperation> = match serde_json::from_value(edits_value.clone()) {
+        let edits_value: serde_json::Value = match serde_json::from_str(&edits_str) {
+            Ok(value) => value,
+            Err(e) => return ToolResult::error(format!("Failed to parse edits JSON: {}", e)),
+        };
+
+        let edits: Vec<EditOperation> = match serde_json::from_value(edits_value) {
             Ok(edits) => edits,
             Err(e) => return ToolResult::error(format!("Failed to parse edits: {}", e)),
         };
