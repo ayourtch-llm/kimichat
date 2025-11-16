@@ -343,9 +343,10 @@ impl ChatApp {
         let markdown_enabled = state.borrow().markdown_enabled;
         let content_html = markdown::render_message_content(&msg.content, markdown_enabled);
 
+        let markdown_class = if markdown_enabled { " markdown" } else { "" };
         let html = format!(
-            r#"<div class="message-role">{}</div><div class="message-content">{}</div>"#,
-            msg.role, content_html
+            r#"<div class="message-role">{}</div><div class="message-content{}">{}</div>"#,
+            msg.role, markdown_class, content_html
         );
 
         msg_div.set_inner_html(&html);
@@ -372,8 +373,12 @@ impl ChatApp {
                 let msg_div = document.create_element("div")?;
                 msg_div.set_class_name("message assistant streaming");
 
-                let html = r#"<div class="message-role">assistant</div><div class="message-content"></div><span class="cursor"></span>"#;
-                msg_div.set_inner_html(html);
+                let markdown_class = if s.markdown_enabled { " markdown" } else { "" };
+                let html = format!(
+                    r#"<div class="message-role">assistant</div><div class="message-content{}"></div><span class="cursor"></span>"#,
+                    markdown_class
+                );
+                msg_div.set_inner_html(&html);
 
                 container.append_child(&msg_div)?;
                 s.current_message_element = Some(msg_div);
@@ -608,6 +613,11 @@ impl ChatApp {
     fn update_session_info(&self, session_type: &str, current_model: &str) -> Result<(), JsValue> {
         if let Ok(element) = dom::get_element_by_id(&self.document, "sessionType") {
             element.set_text_content(Some(session_type));
+        }
+
+        // Update connection status
+        if let Ok(element) = dom::get_element_by_id(&self.document, "connectionStatus") {
+            element.set_text_content(Some("Connected"));
         }
 
         self.update_model_badge(current_model)?;
