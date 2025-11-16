@@ -134,6 +134,85 @@ pub fn get_model_config_from_env(model_name: &str) -> (Option<BackendType>, Opti
     (backend, url, key, model)
 }
 
+/// Create an LLM client based on a ModelType enum value
+/// This is the highest-level helper that maps ModelType to the appropriate client
+pub fn create_client_for_model_type(
+    model: &ModelType,
+    client_config: &ClientConfig,
+    default_api_key: &str,
+) -> Arc<dyn LlmClient> {
+    match model {
+        ModelType::BluModel => {
+            create_model_client(
+                "blu",
+                client_config.backend_blu_model.clone(),
+                client_config.api_url_blu_model.clone(),
+                client_config.api_key_blu_model.clone(),
+                client_config.model_blu_model_override.clone(),
+                default_api_key,
+            )
+        }
+        ModelType::GrnModel => {
+            create_model_client(
+                "grn",
+                client_config.backend_grn_model.clone(),
+                client_config.api_url_grn_model.clone(),
+                client_config.api_key_grn_model.clone(),
+                client_config.model_grn_model_override.clone(),
+                default_api_key,
+            )
+        }
+        ModelType::RedModel => {
+            create_model_client(
+                "red",
+                client_config.backend_red_model.clone(),
+                client_config.api_url_red_model.clone(),
+                client_config.api_key_red_model.clone(),
+                client_config.model_red_model_override.clone(),
+                default_api_key,
+            )
+        }
+        ModelType::AnthropicModel => {
+            // For AnthropicModel, use default Anthropic configuration
+            let api_url = env::var("ANTHROPIC_BASE_URL")
+                .or_else(|_| env::var("ANTHROPIC_BASE_URL_BLU"))
+                .or_else(|_| env::var("ANTHROPIC_BASE_URL_GRN"))
+                .or_else(|_| env::var("ANTHROPIC_BASE_URL_RED"))
+                .ok();
+            let api_key = env::var("ANTHROPIC_API_KEY")
+                .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN"))
+                .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_BLU"))
+                .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_GRN"))
+                .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_RED"))
+                .ok();
+            create_model_client(
+                "anthropic",
+                Some(BackendType::Anthropic),
+                api_url,
+                api_key,
+                Some(model.as_str().to_string()),
+                default_api_key,
+            )
+        }
+        ModelType::Custom(ref name) => {
+            // For custom models, try to infer backend from model name
+            let backend = if name.contains("claude") || name.contains("anthropic") {
+                Some(BackendType::Anthropic)
+            } else {
+                None
+            };
+            create_model_client(
+                "custom",
+                backend,
+                None,
+                None,
+                Some(name.clone()),
+                default_api_key,
+            )
+        }
+    }
+}
+
 /// Create an LLM client for a specific model based on configuration
 /// This centralizes the logic for creating clients across all three models (blu, grn, red)
 pub fn create_model_client(

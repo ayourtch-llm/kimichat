@@ -11,7 +11,7 @@ use crate::agents::{
 use kimichat_models::ModelType;
 
 pub mod helpers;
-pub use helpers::{get_system_prompt, get_api_url, get_api_key, create_model_client};
+pub use helpers::{get_system_prompt, get_api_url, get_api_key, create_model_client, create_client_for_model_type};
 
 // Re-export types from kimichat-llm-api
 pub use kimichat_llm_api::{BackendType, GROQ_API_URL, normalize_api_url};

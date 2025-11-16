@@ -2,7 +2,6 @@ use anyhow::Result;
 use colored::Colorize;
 use futures_util::StreamExt;
 use std::io::Write;
-use std::env;
 
 use crate::KimiChat;
 use kimichat_models::{ModelType, Message, Usage, ChatRequest, StreamChunk};
@@ -295,79 +294,12 @@ pub(crate) async fn call_api_streaming_with_llm_client(
         }
     }).collect();
 
-    // Create the appropriate LlmClient using the centralized factory function
-    let llm_client: std::sync::Arc<dyn crate::agents::agent::LlmClient> = match model {
-        ModelType::BluModel => {
-            crate::config::create_model_client(
-                "blu",
-                chat.client_config.backend_blu_model.clone(),
-                chat.client_config.api_url_blu_model.clone(),
-                chat.client_config.api_key_blu_model.clone(),
-                chat.client_config.model_blu_model_override.clone(),
-                &chat.api_key,
-            )
-        }
-        ModelType::GrnModel => {
-            crate::config::create_model_client(
-                "grn",
-                chat.client_config.backend_grn_model.clone(),
-                chat.client_config.api_url_grn_model.clone(),
-                chat.client_config.api_key_grn_model.clone(),
-                chat.client_config.model_grn_model_override.clone(),
-                &chat.api_key,
-            )
-        }
-        ModelType::RedModel => {
-            crate::config::create_model_client(
-                "red",
-                chat.client_config.backend_red_model.clone(),
-                chat.client_config.api_url_red_model.clone(),
-                chat.client_config.api_key_red_model.clone(),
-                chat.client_config.model_red_model_override.clone(),
-                &chat.api_key,
-            )
-        }
-        ModelType::AnthropicModel => {
-            // For AnthropicModel, use default Anthropic configuration
-            use kimichat_llm_api::BackendType;
-            let api_url = env::var("ANTHROPIC_BASE_URL")
-                .or_else(|_| env::var("ANTHROPIC_BASE_URL_BLU"))
-                .or_else(|_| env::var("ANTHROPIC_BASE_URL_GRN"))
-                .or_else(|_| env::var("ANTHROPIC_BASE_URL_RED"))
-                .ok();
-            let api_key = env::var("ANTHROPIC_API_KEY")
-                .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN"))
-                .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_BLU"))
-                .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_GRN"))
-                .or_else(|_| env::var("ANTHROPIC_AUTH_TOKEN_RED"))
-                .ok();
-            crate::config::create_model_client(
-                "anthropic",
-                Some(BackendType::Anthropic),
-                api_url,
-                api_key,
-                Some(model.as_str().to_string()),
-                &chat.api_key,
-            )
-        }
-        ModelType::Custom(ref name) => {
-            // For custom models, try to infer backend from model name
-            use kimichat_llm_api::BackendType;
-            let backend = if name.contains("claude") || name.contains("anthropic") {
-                Some(BackendType::Anthropic)
-            } else {
-                None
-            };
-            crate::config::create_model_client(
-                "custom",
-                backend,
-                None,
-                None,
-                Some(name.clone()),
-                &chat.api_key,
-            )
-        }
-    };
+    // Create the appropriate LlmClient using the centralized helper
+    let llm_client = crate::config::create_client_for_model_type(
+        model,
+        &chat.client_config,
+        &chat.api_key,
+    );
 
     println!("\n{}", "📡 Starting Anthropic streaming response...".bright_cyan());
 
