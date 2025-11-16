@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use kimichat_toolcore::ToolRegistry;
 use kimichat_policy::PolicyManager;
-use crate::tools::*;
-use crate::terminal::*;
+use kimichat_tools::*;
 use crate::agents::{
     PlanningCoordinator, AgentFactory,
 };

@@ -9,9 +9,7 @@ use tokio::sync::Mutex;
 use clap::Parser;
 
 
-mod open_file;
 mod preview;
-mod tools;
 mod agents;
 mod tools_execution;
 mod cli;

@@ -21,6 +21,7 @@ kimichat-skills = { path = "../crates/kimichat-skills", features = ["embeddings"
 kimichat-terminal = { path = "../crates/kimichat-terminal" }
 kimichat-todo = { path = "../crates/kimichat-todo" }
 kimichat-toolcore = { path = "../crates/kimichat-toolcore" }
+kimichat-tools = { path = "../crates/kimichat-tools" }
 portable-pty = "0.8"
 regex = "*"
 rustyline = "14.0"

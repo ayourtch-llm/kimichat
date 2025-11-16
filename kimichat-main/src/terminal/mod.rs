@@ -1,18 +1,15 @@
-// Terminal tool wrappers
+// Terminal module
 //
-// This module provides LLM-accessible tool wrappers for terminal functionality.
-// The core terminal implementation is in the kimichat-terminal crate.
+// Re-exports terminal functionality from kimichat-terminal and kimichat-tools crates.
 
-mod tools;
+// Re-export core types from kimichat-terminal
+pub use kimichat_terminal::{TerminalManager, TerminalBackendType, MAX_CONCURRENT_SESSIONS};
 
-// Re-export tools
-pub use tools::{
+// Re-export terminal tools from kimichat-tools
+pub use kimichat_tools::{
     PtyLaunchTool, PtySendKeysTool, PtyGetScreenTool,
     PtyListTool, PtyKillTool, PtyGetCursorTool,
     PtyResizeTool, PtySetScrollbackTool,
     PtyStartCaptureTool, PtyStopCaptureTool,
     PtyRequestUserInputTool,
 };
-
-// Re-export core types from kimichat-terminal
-pub use kimichat_terminal::{TerminalManager, TerminalBackendType, MAX_CONCURRENT_SESSIONS};
