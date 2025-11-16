@@ -16,12 +16,7 @@ mod tmux_backend;
 
 // Re-export public API
 pub use manager::TerminalManager;
-pub use session::{TerminalSession, SessionId, SessionMetadata, SessionStatus};
-pub use screen_buffer::ScreenBuffer;
-pub use logger::SessionLogger;
-pub use backend::{TerminalBackend, TerminalBackendType, SessionInfo, CursorPosition};
-pub use pty_backend::PtyBackend;
-pub use tmux_backend::TmuxBackend;
+pub use backend::TerminalBackendType;
 pub use tools::{
     PtyLaunchTool, PtySendKeysTool, PtyGetScreenTool,
     PtyListTool, PtyKillTool, PtyGetCursorTool,

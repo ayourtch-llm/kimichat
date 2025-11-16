@@ -3,7 +3,6 @@ use crate::core::tool_context::ToolContext;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::process::Command as AsyncCommand;
-use colored::Colorize;
 
 /// Tool for analyzing project structure and dependencies
 pub struct ProjectAnalysisTool;

@@ -1,6 +1,6 @@
 /// PTY-based terminal backend (internal implementation)
 use super::backend::{TerminalBackend, SessionInfo, CursorPosition};
-use super::session::{TerminalSession, SessionId, SessionStatus};
+use super::session::{TerminalSession, SessionId};
 use anyhow::{Result, bail};
 use async_trait::async_trait;
 use std::collections::HashMap;

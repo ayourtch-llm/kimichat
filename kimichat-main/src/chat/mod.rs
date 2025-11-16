@@ -4,4 +4,4 @@ pub mod history;
 pub mod session;
 
 // Re-export commonly used items
-pub use state::{ChatState, save_state, load_state};
+pub use state::{save_state, load_state};

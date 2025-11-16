@@ -1,6 +1,5 @@
 use anyhow::Result;
 use colored::Colorize;
-use std::env;
 use std::sync::Arc;
 
 use crate::core::ToolRegistry;
@@ -8,8 +7,7 @@ use crate::policy::PolicyManager;
 use crate::tools::*;
 use crate::terminal::*;
 use crate::agents::{
-    PlanningCoordinator, AgentFactory, LlmClient,
-    AnthropicLlmClient, GroqLlmClient, LlamaCppClient,
+    PlanningCoordinator, AgentFactory,
 };
 use crate::models::ModelType;
 

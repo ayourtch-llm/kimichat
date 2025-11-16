@@ -1,6 +1,5 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use anyhow::{Result, Context};
 use portable_pty::{CommandBuilder, PtySize, PtySystem, native_pty_system};
 
@@ -27,7 +26,7 @@ impl PtyHandler {
             })
             .context("Failed to open PTY")?;
 
-        let mut pty = pty_pair.master;
+        let pty = pty_pair.master;
         let slave = pty_pair.slave;
 
         // Build command

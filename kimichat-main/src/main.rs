@@ -32,13 +32,9 @@ use logging::ConversationLogger;
 use core::{ToolRegistry, ToolParameters};
 use core::tool_context::ToolContext;
 use policy::PolicyManager;
-use tools_execution::validation::{repair_tool_call_with_model, validate_and_fix_tool_calls_in_place};
-use cli::{Cli, Commands, TerminalCommands};
-use config::{ClientConfig, GROQ_API_URL, normalize_api_url, initialize_tool_registry, initialize_agent_system};
+use cli::{Cli, Commands};
+use config::{ClientConfig, GROQ_API_URL, initialize_tool_registry, initialize_agent_system};
 use chat::{save_state, load_state};
-use chat::history::summarize_and_trim_history;
-use chat::session::chat as chat_session;
-use api::{call_api, call_api_streaming, call_api_with_llm_client, call_api_streaming_with_llm_client};
 use app::{setup_from_cli, run_task_mode, run_repl_mode};
 use agents::{
     PlanningCoordinator, GroqLlmClient,
@@ -48,7 +44,7 @@ use models::{
     ModelType, Message, ToolCall, FunctionCall,
     SwitchModelArgs,
     Tool, FunctionDef,
-    ChatResponse, Usage,
+    ChatResponse,
 };
 use terminal::TerminalManager;
 

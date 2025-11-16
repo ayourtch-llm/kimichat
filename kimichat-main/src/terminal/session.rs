@@ -115,7 +115,7 @@ impl TerminalSession {
 
         // Clone the PTY reader for the background thread
         let mut pty_reader = {
-            let mut session = session_arc.lock().unwrap();
+            let session = session_arc.lock().unwrap();
             session.pty_handler.pty.try_clone_reader()
                 .map_err(|e| anyhow::anyhow!("Failed to clone PTY reader: {}", e))?
         };

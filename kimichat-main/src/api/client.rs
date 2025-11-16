@@ -18,9 +18,9 @@ pub(crate) async fn call_api(
     chat: &KimiChat,
     orig_messages: &[Message],
 ) -> Result<(Message, Option<Usage>, ModelType)> {
-    let mut current_model = chat.current_model.clone();
+    let current_model = chat.current_model.clone();
     // Clone messages and strip reasoning field (only supported by some models like Groq)
-    let mut messages: Vec<Message> = orig_messages.iter().map(|m| {
+    let messages: Vec<Message> = orig_messages.iter().map(|m| {
         let mut msg = m.clone();
         msg.reasoning = None; // Strip reasoning field to avoid compatibility issues
         msg

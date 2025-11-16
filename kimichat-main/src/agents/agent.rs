@@ -1,4 +1,3 @@
-use crate::core::tool_context::ToolContext;
 use crate::core::tool_registry::ToolRegistry;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};

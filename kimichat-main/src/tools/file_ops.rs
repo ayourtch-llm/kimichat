@@ -1,6 +1,5 @@
 use crate::{param, core::tool::{Tool, ToolParameters, ToolResult, ParameterDefinition}};
 use crate::core::tool_context::ToolContext;
-use crate::tools::helpers::build_glob_pattern;
 use crate::open_file;
 use async_trait::async_trait;
 use std::collections::HashMap;

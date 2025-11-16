@@ -1,7 +1,7 @@
 use anyhow::Result;
 use colored::Colorize;
 use futures_util::StreamExt;
-use std::io::{self, Write};
+use std::io::Write;
 use std::env;
 
 use crate::KimiChat;

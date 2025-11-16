@@ -1,7 +1,6 @@
 use crate::agents::agent::{LlmClient, LlmResponse, ChatMessage, ToolDefinition};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::Value;
 
 /// llama.cpp server LLM client implementation with OpenAI-compatible API
 pub struct LlamaCppClient {

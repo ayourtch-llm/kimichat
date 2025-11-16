@@ -5,7 +5,7 @@ use axum::{
     },
     http::StatusCode,
     response::{Html, IntoResponse, Json, Response},
-    routing::{delete, get, post},
+    routing::get,
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -20,7 +20,6 @@ use crate::{
         protocol::{ClientMessage, ServerMessage, SessionConfig, SessionId, SessionInfo},
         session_manager::SessionManager,
     },
-    KimiChat,
 };
 
 /// Application state shared across routes
@@ -559,12 +558,12 @@ async fn handle_switch_model(
 
 /// GET / - Serve index page
 async fn serve_index() -> Html<&'static str> {
-    Html(include_str!("../../web/index.html"))
+    Html(include_str!("../../../web/index.html"))
 }
 
 /// GET /session/:id - Serve session page
 async fn serve_session(Path(_id): Path<SessionId>) -> Html<&'static str> {
-    Html(include_str!("../../web/session.html"))
+    Html(include_str!("../../../web/session.html"))
 }
 
 /// Error handling

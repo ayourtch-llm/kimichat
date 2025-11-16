@@ -1,7 +1,6 @@
 use crate::agents::agent::{LlmClient, LlmResponse, ChatMessage, ToolDefinition};
 use anyhow::{Result, Context};
 use async_trait::async_trait;
-use serde_json::Value;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
