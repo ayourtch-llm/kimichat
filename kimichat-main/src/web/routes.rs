@@ -46,27 +46,20 @@ pub fn create_router(state: AppState) -> Router {
 }
 
 /// GET /api/sessions - List all active sessions
-async fn list_sessions(State(state): State<AppState>) -> Json<serde_json::Value> {
+async fn list_sessions(State(state): State<AppState>) -> Json<Vec<SessionInfo>> {
     let sessions = state.session_manager.list_sessions().await;
-    Json(serde_json::json!({ "sessions": sessions }))
+    Json(sessions)
 }
 
 /// POST /api/sessions - Create a new session
 async fn create_session(
     State(state): State<AppState>,
-    Json(payload): Json<serde_json::Value>,
+    Json(config): Json<SessionConfig>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let config: SessionConfig = serde_json::from_value(
-        payload
-            .get("config")
-            .cloned()
-            .unwrap_or(serde_json::json!({})),
-    )?;
-
     let session_id = state.session_manager.create_session(config).await?;
 
     Ok(Json(serde_json::json!({
-        "session_id": session_id,
+        "id": session_id,
         "created_at": chrono::Utc::now().to_rfc3339(),
         "websocket_url": format!("/ws/{}", session_id),
     })))
