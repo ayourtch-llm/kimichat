@@ -45,7 +45,7 @@ pub struct TaskContextBuilder {
     conversation_history: Vec<crate::agents::agent::ChatMessage>,
     terminal_manager: Option<std::sync::Arc<tokio::sync::Mutex<crate::terminal::TerminalManager>>>,
     skill_registry: Option<std::sync::Arc<crate::skills::SkillRegistry>>,
-    todo_manager: Option<std::sync::Arc<crate::todo::TodoManager>>,
+    todo_manager: Option<std::sync::Arc<kimichat_todo::TodoManager>>,
     cancellation_token: Option<tokio_util::sync::CancellationToken>,
 }
 
@@ -99,7 +99,7 @@ impl TaskContextBuilder {
         self
     }
 
-    pub fn with_todo_manager(mut self, todo_manager: std::sync::Arc<crate::todo::TodoManager>) -> Self {
+    pub fn with_todo_manager(mut self, todo_manager: std::sync::Arc<kimichat_todo::TodoManager>) -> Self {
         self.todo_manager = Some(todo_manager);
         self
     }

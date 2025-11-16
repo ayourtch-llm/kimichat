@@ -1,0 +1,8 @@
+[package]
+name = "kimichat-todo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+colored = "2.1"
+serde = { version = "1.0", features = ["derive"] }

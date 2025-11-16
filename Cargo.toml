@@ -3,5 +3,6 @@ members = [
     "kimichat-main",
     "crates/kimichat-models",
     "crates/kimichat-logging",
+    "crates/kimichat-todo",
 ]
 resolver = "2"

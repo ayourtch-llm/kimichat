@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use crate::policy::PolicyManager;
 use crate::terminal::TerminalManager;
 use crate::skills::SkillRegistry;
-use crate::todo::TodoManager;
+use kimichat_todo::TodoManager;
 
 /// Tool execution context
 ///

@@ -23,7 +23,6 @@ mod api;
 mod app;
 mod terminal;
 mod skills;
-mod todo;
 mod web;
 
 use kimichat_logging::ConversationLogger;
@@ -73,7 +72,7 @@ pub(crate) struct KimiChat {
     // Non-interactive mode (web/API)
     pub(crate) non_interactive: bool,
     // Todo manager for task tracking
-    pub(crate) todo_manager: Arc<todo::TodoManager>,
+    pub(crate) todo_manager: Arc<kimichat_todo::TodoManager>,
     // Streaming mode
     pub(crate) stream_responses: bool,
     // Verbose debug mode
@@ -196,7 +195,7 @@ impl KimiChat {
         ));
 
         // Initialize todo manager
-        let todo_manager = Arc::new(todo::TodoManager::new());
+        let todo_manager = Arc::new(kimichat_todo::TodoManager::new());
 
         // Determine initial model based on overrides or defaults
         // Default to GPT-OSS for cost efficiency - it's significantly cheaper than Kimi
