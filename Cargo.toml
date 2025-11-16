@@ -11,5 +11,6 @@ members = [
     "crates/kimichat-terminal",
     "crates/kimichat-toolcore",
     "crates/kimichat-tools",
+    "crates/kimichat-wasm",
 ]
 resolver = "2"

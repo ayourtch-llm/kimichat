@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KimiChat - Sessions</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#111827">
     <style>
         * {
             margin: 0;
@@ -28,6 +30,38 @@
             color: #9CA3AF;
             margin-bottom: 2rem;
         }
+        .create-session-form {
+            background: #1F2937;
+            border: 1px solid #374151;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #9CA3AF;
+        }
+        .form-group select,
+        .form-group input[type="checkbox"] {
+            background: #111827;
+            color: #fff;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            padding: 8px 12px;
+            width: 100%;
+        }
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .checkbox-wrapper input[type="checkbox"] {
+            width: auto;
+        }
         .btn {
             background: #2563EB;
             color: white;
@@ -36,10 +70,17 @@
             border-radius: 8px;
             font-size: 1rem;
             cursor: pointer;
-            margin-bottom: 2rem;
+            width: 100%;
         }
         .btn:hover {
             background: #1D4ED8;
+        }
+        .btn-secondary {
+            background: #374151;
+            margin-bottom: 1rem;
+        }
+        .btn-secondary:hover {
+            background: #4B5563;
         }
         .session-list {
             display: grid;
@@ -66,25 +107,29 @@
         .session-type {
             font-weight: 600;
         }
-        .badge {
-            background: #10B981;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-        }
         .session-id {
             color: #9CA3AF;
             font-family: monospace;
             font-size: 0.875rem;
         }
-        .session-meta {
+        .session-info {
+            display: grid;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        .info-row {
             display: flex;
-            gap: 1.5rem;
+            justify-content: space-between;
             color: #9CA3AF;
             font-size: 0.875rem;
         }
-        .loading {
+        .info-row .label {
+            font-weight: 500;
+        }
+        .info-row .value {
+            color: #fff;
+        }
+        .empty-state {
             text-align: center;
             padding: 3rem;
             color: #9CA3AF;
@@ -109,11 +154,6 @@
                 width: 100%;
                 padding: 14px;
             }
-            .session-meta {
-                flex-direction: column;
-                gap: 0.5rem;
-                align-items: flex-start;
-            }
         }
     </style>
 </head>
@@ -124,108 +164,48 @@
             <p class="subtitle">Multi-agent AI CLI with web interface</p>
         </header>
 
-        <button class="btn" id="newSessionBtn">+ New Session</button>
+        <div class="create-session-form">
+            <h2 style="margin-bottom: 1rem;">Create New Session</h2>
+            <form id="createSessionForm">
+                <div class="form-group">
+                    <label for="modelSelect">Model</label>
+                    <select id="modelSelect" name="model">
+                        <option value="">Default</option>
+                        <option value="grn_model">Green Model</option>
+                        <option value="blu_model">Blue Model</option>
+                        <option value="red_model">Red Model</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="agentsEnabled" name="agentsEnabled">
+                        <label for="agentsEnabled" style="margin: 0;">Enable multi-agent mode</label>
+                    </div>
+                </div>
+                <button type="submit" class="btn">Create Session</button>
+            </form>
+        </div>
 
-        <div id="sessionList" class="session-list"></div>
-        <div id="loading" class="loading" style="display:none;">Loading sessions...</div>
-        <div id="error" class="error" style="display:none;"></div>
+        <button class="btn btn-secondary" id="refreshButton">🔄 Refresh Sessions</button>
+
+        <div id="sessionsList" class="session-list"></div>
     </div>
 
-    <script>
-        const API_BASE = window.location.origin;
+    <script type="module">
+        // Load and initialize WASM module
+        import init, { init_session_list } from './pkg/kimichat_wasm.js';
 
-        document.addEventListener('DOMContentLoaded', () => {
-            loadSessions();
-            document.getElementById('newSessionBtn').addEventListener('click', createNewSession);
+        async function run() {
+            await init();
+            await init_session_list();
+        }
+
+        run().catch(err => {
+            console.error('Failed to initialize WASM:', err);
+            // Fallback to vanilla JS if WASM fails
+            document.getElementById('sessionsList').innerHTML =
+                '<div class="error">Failed to load WASM module. Please refresh the page.</div>';
         });
-
-        async function loadSessions() {
-            const loading = document.getElementById('loading');
-            const sessionList = document.getElementById('sessionList');
-            const errorDiv = document.getElementById('error');
-
-            loading.style.display = 'block';
-            sessionList.innerHTML = '';
-            errorDiv.style.display = 'none';
-
-            try {
-                const response = await fetch(`${API_BASE}/api/sessions`);
-                if (!response.ok) throw new Error('Failed to load sessions');
-
-                const data = await response.json();
-                displaySessions(data.sessions);
-            } catch (error) {
-                errorDiv.textContent = 'Error loading sessions: ' + error.message;
-                errorDiv.style.display = 'block';
-            } finally {
-                loading.style.display = 'none';
-            }
-        }
-
-        function displaySessions(sessions) {
-            const container = document.getElementById('sessionList');
-
-            if (sessions.length === 0) {
-                container.innerHTML = '<div class="loading">No active sessions. Click "New Session" to get started.</div>';
-                return;
-            }
-
-            sessions.forEach(session => {
-                const card = document.createElement('div');
-                card.className = 'session-card';
-                card.onclick = () => window.location.href = `/session/${session.id}`;
-
-                const typeIcon = session.type === 'Tui' ? '💻' : '🌐';
-                const attachableBadge = session.attachable ? '<span class="badge">Attachable</span>' : '';
-
-                card.innerHTML = `
-                    <div class="session-header">
-                        <span style="font-size: 1.5rem;">${typeIcon}</span>
-                        <span class="session-type">${session.type} Session</span>
-                        ${attachableBadge}
-                    </div>
-                    <div class="session-id">#${session.id.substring(0, 8)}</div>
-                    <div class="session-meta">
-                        <span>📝 ${session.message_count} messages</span>
-                        <span>👥 ${session.active_clients} client${session.active_clients !== 1 ? 's' : ''}</span>
-                        <span>🤖 ${session.current_model}</span>
-                    </div>
-                `;
-
-                container.appendChild(card);
-            });
-        }
-
-        async function createNewSession() {
-            const loading = document.getElementById('loading');
-            const errorDiv = document.getElementById('error');
-
-            loading.style.display = 'block';
-            errorDiv.style.display = 'none';
-
-            try {
-                const response = await fetch(`${API_BASE}/api/sessions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        config: {
-                            model: 'grn_model',
-                            agents_enabled: false,
-                            stream_responses: true
-                        }
-                    })
-                });
-
-                if (!response.ok) throw new Error('Failed to create session');
-
-                const data = await response.json();
-                window.location.href = `/session/${data.session_id}`;
-            } catch (error) {
-                errorDiv.textContent = 'Error creating session: ' + error.message;
-                errorDiv.style.display = 'block';
-                loading.style.display = 'none';
-            }
-        }
     </script>
 </body>
 </html>
