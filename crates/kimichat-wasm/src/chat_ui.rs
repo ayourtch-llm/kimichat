@@ -180,6 +180,22 @@ impl ChatApp {
                 self.render_history(document, state, history)?;
             }
 
+            ServerMessage::AssistantMessage { content, streaming } => {
+                if streaming {
+                    // Streaming message - treat as chunk
+                    self.handle_message_chunk(document, state, content)?;
+                } else {
+                    // Complete message - render directly
+                    let msg = Message {
+                        role: "assistant".to_string(),
+                        content,
+                        ..Default::default()
+                    };
+                    self.render_message(document, state, &msg)?;
+                    dom::scroll_to_bottom(&dom::get_element_by_id(document, "messagesContainer")?);
+                }
+            }
+
             ServerMessage::AssistantMessageChunk { chunk } => {
                 self.handle_message_chunk(document, state, chunk)?;
             }
@@ -260,8 +276,20 @@ impl ChatApp {
                 self.show_error(&message, recoverable)?;
             }
 
+            ServerMessage::SessionCreated { session_id, created_at } => {
+                log::info!("Session created: {} at {}", session_id, created_at);
+            }
+
+            ServerMessage::SessionList { sessions } => {
+                log::info!("Received session list: {} sessions", sessions.len());
+            }
+
+            ServerMessage::SessionError { error } => {
+                self.show_error(&error, true)?;
+            }
+
             _ => {
-                log::debug!("Unhandled message type");
+                log::warn!("Unhandled message type: {:?}", msg);
             }
         }
 
@@ -693,6 +721,20 @@ async fn send_message_handler(
     if content.trim().is_empty() {
         return Ok(());
     }
+
+    // Render user message immediately
+    let container = dom::get_element_by_id(&document, "messagesContainer")?;
+    let msg_div = document.create_element("div")?;
+    msg_div.set_class_name("message user");
+
+    let content_html = crate::utils::escape_html(&content).replace('\n', "<br>");
+    let html = format!(
+        r#"<div class="message-role">user</div><div class="message-content">{}</div>"#,
+        content_html
+    );
+    msg_div.set_inner_html(&html);
+    container.append_child(&msg_div)?;
+    dom::scroll_to_bottom(&container);
 
     // Clear input
     input.set_value("");
