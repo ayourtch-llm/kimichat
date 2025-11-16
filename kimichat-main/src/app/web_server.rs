@@ -21,13 +21,16 @@ pub async fn run_web_server(
     println!("   Address: {}", addr);
     println!("   Working directory: {}", work_dir.display());
 
+    // Determine web directory (relative to work_dir)
+    let web_dir = work_dir.join("web");
+
     // Create web server config
     let config = WebServerConfig {
         bind_addr: addr,
         work_dir,
         client_config,
         policy_manager,
-        web_dir: None, // Could be made configurable
+        web_dir: Some(web_dir),
     };
 
     // Create and start server
