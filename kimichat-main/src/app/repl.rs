@@ -574,7 +574,6 @@ pub async fn run_repl_mode(
 
 #[cfg(test)]
 mod repl_compact_tests {
-    use super::*;
     use crate::KimiChat;
     use kimichat_models::{Message, ModelType};
     use std::sync::Arc;
@@ -642,8 +641,6 @@ mod repl_compact_tests {
             name: None,
             reasoning: None,
         });
-        
-        let initial_count = chat.messages.len();
         
         // The compact command should not crash and should preserve system messages
         let result = crate::chat::history::intelligent_compaction(&mut chat, 0).await;
