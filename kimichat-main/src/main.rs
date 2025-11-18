@@ -30,7 +30,7 @@ use kimichat_toolcore::{ToolRegistry, ToolParameters, ToolContext};
 use cli::{Cli, Commands};
 use config::{ClientConfig, GROQ_API_URL, initialize_tool_registry, initialize_agent_system};
 use chat::{save_state, load_state};
-use app::{setup_from_cli, run_task_mode, run_repl_mode};
+use app::{setup_from_cli, run_task_mode, run_subagent_mode, run_repl_mode};
 use kimichat_models::{
     ModelType, Message, ToolCall, FunctionCall,
     SwitchModelArgs,
@@ -524,14 +524,27 @@ async fn main() -> Result<()> {
 
     // Handle task mode if requested
     if let Some(task_text) = cli.task.clone() {
-        return run_task_mode(
-            &cli,
-            task_text,
-            app_config.client_config,
-            app_config.work_dir,
-            app_config.policy_manager,
-        )
-        .await;
+        // Use subagent mode for single-agent mode (when --agents is NOT specified)
+        if !cli.agents {
+            return app::run_subagent_mode(
+                &cli,
+                task_text,
+                app_config.client_config,
+                app_config.work_dir,
+                app_config.policy_manager,
+            )
+            .await;
+        } else {
+            // Use regular task mode for multi-agent system (when --agents IS specified)
+            return app::run_task_mode(
+                &cli,
+                task_text,
+                app_config.client_config,
+                app_config.work_dir,
+                app_config.policy_manager,
+            )
+            .await;
+        }
     }
 
     // Handle web server mode
