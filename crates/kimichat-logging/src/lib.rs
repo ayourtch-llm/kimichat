@@ -18,6 +18,8 @@ pub fn safe_truncate(s: &str, max_chars: usize) -> String {
     if s.chars().count() <= max_chars {
         s.to_string()
     } else {
-        s.chars().take(max_chars).collect()
+        // Reserve space for "..." suffix
+        let trunc_chars = if max_chars >= 3 { max_chars - 3 } else { 0 };
+        format!("{}...", s.chars().take(trunc_chars).collect::<String>())
     }
 }

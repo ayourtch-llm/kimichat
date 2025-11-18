@@ -106,7 +106,8 @@ mod tests {
         let mut chat = create_test_kimichat();
         
         let size = calculate_conversation_size(&chat.messages);
-        assert_eq!(size, 0);
+        // JSON "[]" has 2 characters, so size should be 2
+        assert_eq!(size, 2);
     }
 
     #[test]
@@ -177,10 +178,10 @@ mod tests {
         
         chat.messages.push(create_test_message("system", "You are a helpful assistant"));
         
-        // Add older messages (should be summarized)
-        for i in 0..20 {
-            chat.messages.push(create_test_message("user", &format!("Old user message {}", i)));
-            chat.messages.push(create_test_message("assistant", &format!("Old assistant response {}", i)));
+        // Add older messages (should be summarized) - make them very large to trigger compaction
+        for i in 0..100 {
+            chat.messages.push(create_large_message("user", &format!("Old user message {}", i), 5)); // 5KB each
+            chat.messages.push(create_large_message("assistant", &format!("Old assistant response {}", i), 5)); // 5KB each
         }
         
         // Add recent tool call sequence (should be preserved)
