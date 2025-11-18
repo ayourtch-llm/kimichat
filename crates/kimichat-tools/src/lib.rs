@@ -14,6 +14,7 @@ pub mod skill_tools;
 pub mod todo_tools;
 pub mod terminal_tools;
 pub mod open_file;
+pub mod subagent_tools;
 
 pub use file_ops::*;
 pub use search::*;
@@ -23,3 +24,4 @@ pub use iteration_control::*;
 pub use skill_tools::*;
 pub use todo_tools::*;
 pub use terminal_tools::*;
+pub use subagent_tools::*;
