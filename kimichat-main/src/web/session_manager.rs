@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::str::FromStr;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use uuid::Uuid;
 
@@ -241,7 +242,8 @@ impl SessionManager {
 
         // Determine which model to use
         let model_str = config.model.as_deref().unwrap_or("grn_model");
-        let model = kimichat_models::ModelType::from_str(model_str);
+        let model = kimichat_models::ModelType::from_str(model_str)
+            .map_err(|e| anyhow::anyhow!("Invalid model '{}': {}", model_str, e))?;
 
         // Create KimiChat instance
         let mut kimichat = KimiChat::new_with_config(

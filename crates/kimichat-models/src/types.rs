@@ -31,7 +31,7 @@ impl ModelType {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_string(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "blu_model" | "blu-model" | "blumodel" => ModelType::BluModel,
             "grn_model" | "grn-model" | "grnmodel" => ModelType::GrnModel,
@@ -39,6 +39,14 @@ impl ModelType {
             "anthropic" | "claude" | "anthropic_model" | "anthropic-model" => ModelType::AnthropicModel,
             _ => ModelType::Custom(s.to_string()),
         }
+    }
+}
+
+impl std::str::FromStr for ModelType {
+    type Err = String;
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(ModelType::from_string(s))
     }
 }
 
