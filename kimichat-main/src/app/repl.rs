@@ -327,6 +327,7 @@ pub async fn run_repl_mode(
                     println!("  /brainstorm             - Use brainstorming skill for interactive design refinement");
                     println!("  /write-plan             - Use writing-plans skill to create detailed implementation plan");
                     println!("  /execute-plan           - Use executing-plans skill to execute plan with checkpoints");
+                    println!("  /compact               - Force immediate conversation compaction to reduce session size");
                     println!("  /skills help            - Show this help");
                     continue;
                 }
