@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Result, Context};
 use chrono::{DateTime, Utc};
 use serde_json::json;
+use kimichat_logging::get_logs_dir;
 
 use super::session::SessionId;
 
@@ -95,8 +96,9 @@ impl SessionLogger {
     /// Start capturing output to a separate file
     pub fn start_capture(&mut self) -> Result<PathBuf> {
         let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
-        let capture_path = PathBuf::from(format!(
-            "logs/terminals/session-{}-capture-{}.log",
+        let logs_dir = kimichat_logging::get_logs_dir()?;
+        let capture_path = logs_dir.join(format!(
+            "terminals/session-{}-capture-{}.log",
             self.session_id, timestamp
         ));
 
@@ -134,8 +136,9 @@ impl SessionLogger {
         let bytes = self.capture_bytes;
 
         // Get capture file path before closing
-        let capture_path = PathBuf::from(format!(
-            "logs/terminals/session-{}-capture-{}.log",
+        let logs_dir = kimichat_logging::get_logs_dir()?;
+        let capture_path = logs_dir.join(format!(
+            "terminals/session-{}-capture-{}.log",
             self.session_id,
             capture_start.format("%Y%m%d-%H%M%S")
         ));

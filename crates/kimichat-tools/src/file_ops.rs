@@ -1,5 +1,6 @@
 use kimichat_toolcore::{param, Tool, ToolParameters, ToolResult, ParameterDefinition};
 use kimichat_toolcore::tool_context::ToolContext;
+use kimichat_logging::get_logs_dir;
 use crate::open_file;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -240,7 +241,10 @@ impl Tool for EditFileTool {
             });
 
             // Create logs directory if it doesn't exist
-            let log_dir = context.work_dir.join("logs");
+            let log_dir = kimichat_logging::get_logs_dir().unwrap_or_else(|_| {
+                // Fallback to local logs directory if get_logs_dir fails
+                context.work_dir.join("logs")
+            });
             let mut log_file_path_str = String::new();
             if let Err(e) = fs::create_dir_all(&log_dir) {
                 eprintln!("Warning: Failed to create log directory: {}", e);

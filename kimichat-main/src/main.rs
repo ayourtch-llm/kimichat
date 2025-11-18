@@ -182,9 +182,11 @@ impl KimiChat {
         };
 
         // Initialize terminal manager with specified backend
-        let log_dir = PathBuf::from("logs/terminals");
+        let logs_dir = kimichat_logging::get_logs_dir()
+            .unwrap_or_else(|_| PathBuf::from("logs"))
+            .join("terminals");
         let terminal_manager = Arc::new(Mutex::new(
-            TerminalManager::with_backend(log_dir, backend_type, MAX_CONCURRENT_SESSIONS)
+            TerminalManager::with_backend(logs_dir, backend_type, MAX_CONCURRENT_SESSIONS)
         ));
 
         // Initialize todo manager
@@ -510,7 +512,10 @@ async fn main() -> Result<()> {
             }
             Commands::Terminal { command: terminal_cmd } => {
                 // Initialize TerminalManager for terminal commands
-                let log_dir = PathBuf::from("logs/terminals");
+                let logs_dir = kimichat_logging::get_logs_dir()
+                    .unwrap_or_else(|_| PathBuf::from("logs"))
+                    .join("terminals");
+                let log_dir = logs_dir;
                 let backend_type = resolve_terminal_backend(&cli)?;
                 let terminal_manager = Arc::new(Mutex::new(
                     TerminalManager::with_backend(log_dir, backend_type, MAX_CONCURRENT_SESSIONS)
