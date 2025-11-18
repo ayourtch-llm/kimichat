@@ -1,12 +1,11 @@
 use anyhow::Result;
 use colored::Colorize;
-use futures_util::StreamExt;
 use std::io::Write;
 
 use crate::KimiChat;
 use kimichat_models::{ModelType, Message, Usage, ChatRequest, StreamChunk};
 use kimichat_agents::{ToolDefinition, ChatMessage};
-use kimichat_logging::{log_request, log_request_to_file, log_response, log_stream_chunk};
+use kimichat_logging::{log_request, log_request_to_file, log_response, log_response_to_file, log_raw_response_to_file, log_stream_chunk};
 use kimichat_toolcore::parse_xml_tool_calls;
 use crate::{ToolCall, FunctionCall};
 
@@ -42,6 +41,12 @@ pub(crate) async fn call_api_streaming(
     // Get the appropriate API URL based on the current model
     let api_url = crate::config::get_api_url(&chat.client_config, &current_model);
 
+    // Capture request timestamp for response logging correlation
+    let request_timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     // Log request details in verbose mode
     log_request(&api_url, &request, &chat.api_key, chat.verbose);
 
@@ -66,6 +71,8 @@ pub(crate) async fn call_api_streaming(
 
         // Log error response
         log_response(&status, &headers, &error_body, chat.verbose);
+        let _ = log_response_to_file(&status, &headers, &error_body, request_timestamp, &current_model);
+        let _ = log_raw_response_to_file(&error_body, request_timestamp, &current_model);
 
         return Err(anyhow::anyhow!("API request failed with status {}: {}", status, error_body));
     }
@@ -82,6 +89,7 @@ pub(crate) async fn call_api_streaming(
     let mut role = String::new();
     let mut usage: Option<Usage> = None;
     let mut buffer = String::new();
+    let mut raw_response_body = String::new(); // Capture raw response body
 
     // Show thinking indicator
     print!("🤔 Thinking...");
@@ -96,7 +104,9 @@ pub(crate) async fn call_api_streaming(
     while let Some(chunk_result) = stream.next().await {
         match chunk_result {
             Ok(bytes) => {
-                buffer.push_str(&String::from_utf8_lossy(&bytes));
+                let chunk_str = String::from_utf8_lossy(&bytes);
+                raw_response_body.push_str(&chunk_str); // Capture raw response
+                buffer.push_str(&chunk_str);
 
                 // Process complete lines (SSE format: "data: {json}\n\n")
                 while let Some(line_end) = buffer.find("\n\n") {
@@ -235,6 +245,48 @@ pub(crate) async fn call_api_streaming(
 
     println!(); // New line after streaming complete
 
+    // Create a response body representation for logging with raw content
+    let response_body_for_logging = if accumulated_tool_calls.is_empty() {
+        // Simple text response - log raw accumulated content
+        if accumulated_reasoning.is_empty() {
+            accumulated_content.clone()
+        } else {
+            // Include reasoning in the logged response
+            format!("<reasoning>\n{}\n</reasoning>\n\n{}", accumulated_reasoning, accumulated_content)
+        }
+    } else {
+        // Response with tool calls - create raw format similar to API response
+        let mut result = String::new();
+        
+        // Add reasoning if present
+        if !accumulated_reasoning.is_empty() {
+            result.push_str(&format!("<reasoning>\n{}\n</reasoning>\n\n", accumulated_reasoning));
+        }
+        
+        // Add content if present
+        if !accumulated_content.is_empty() {
+            result.push_str(&accumulated_content);
+        }
+        
+        // Add tool calls representation
+        result.push_str("\n\n<tool_calls>\n");
+        for (i, tool_call) in accumulated_tool_calls.iter().enumerate() {
+            result.push_str(&format!("Tool Call {}:\n", i + 1));
+            result.push_str(&format!("  ID: {}\n", tool_call.id));
+            result.push_str(&format!("  Function: {}\n", tool_call.function.name));
+            result.push_str(&format!("  Arguments: {}\n", tool_call.function.arguments));
+        }
+        result.push_str("</tool_calls>");
+        
+        result
+    };
+
+    // Log successful streaming response to file
+    let _ = log_response_to_file(&status, &headers, &response_body_for_logging, request_timestamp, &current_model);
+    
+    // Also log the raw response body without any transformation
+    let _ = log_raw_response_to_file(&raw_response_body, request_timestamp, &current_model);
+
     // Build the final message
     let mut message = Message {
         role: if role.is_empty() { "assistant".to_string() } else { role },
@@ -304,6 +356,15 @@ pub(crate) async fn call_api_streaming_with_llm_client(
         &chat.api_key,
     );
 
+    // Get the appropriate API URL based on the current model
+    let _api_url = crate::config::get_api_url(&chat.client_config, model);
+
+    // Capture request timestamp for response logging correlation
+    let request_timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     println!("\n{}", "📡 Starting Anthropic streaming response...".bright_cyan());
 
     // Initialize response accumulation
@@ -372,6 +433,24 @@ pub(crate) async fn call_api_streaming_with_llm_client(
         completion_tokens: u.completion_tokens as usize,
         total_tokens: u.total_tokens as usize,
     });
+
+    // Log the final response for LlmClient streaming
+    let response_body = format!("Role: {}\n\nContent:\n{}\n\nTool calls: {}\n\nUsage: {:?}",
+        message.role,
+        message.content,
+        message.tool_calls.as_ref().map_or("None".to_string(), |calls| {
+            format!("{} calls", calls.len())
+        }),
+        usage
+    );
+    
+    // Create mock status and headers for logging
+    let status = reqwest::StatusCode::OK;
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("content-type", "application/json".parse().unwrap());
+    headers.insert("x-streaming", "anthropic".parse().unwrap());
+    
+    let _ = log_response_to_file(&status, &headers, &response_body, request_timestamp, model);
 
     Ok((message, usage, model.clone()))
 }

@@ -13,6 +13,8 @@ pub use request_logger::{
     log_request,
     log_request_to_file,
     log_response,
+    log_response_to_file,
+    log_raw_response_to_file,
     log_stream_chunk,
 };
 

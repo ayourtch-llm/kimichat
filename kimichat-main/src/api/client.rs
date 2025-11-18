@@ -6,7 +6,7 @@ use tokio::time::sleep;
 use crate::KimiChat;
 use kimichat_models::{ModelType, Message, Usage, ChatRequest, ChatResponse};
 use kimichat_agents::{ToolDefinition, ChatMessage};
-use kimichat_logging::{log_request, log_request_to_file, log_response};
+use kimichat_logging::{log_request, log_request_to_file, log_response, log_response_to_file, log_raw_response_to_file};
 use kimichat_logging::safe_truncate;
 use kimichat_toolcore::parse_xml_tool_calls;
 use crate::MAX_RETRIES;
@@ -70,6 +70,12 @@ pub(crate) async fn call_api(
         // Get the appropriate API URL based on the current model
         let api_url = crate::config::get_api_url(&chat.client_config, &current_model);
 
+        // Capture request timestamp for response logging correlation
+        let request_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
         // Log request details in verbose mode
         log_request(&api_url, &request, &chat.api_key, chat.verbose);
 
@@ -114,6 +120,8 @@ pub(crate) async fn call_api(
 
             // Log error response in verbose mode
             log_response(&status, &headers, &error_body, chat.verbose);
+            let _ = log_response_to_file(&status, &headers, &error_body, request_timestamp, &current_model);
+            let _ = log_raw_response_to_file(&error_body, request_timestamp, &current_model);
 
             // Check if this is a tool-related error
             if status == 400 && error_body.contains("tool_use_failed") {
@@ -146,6 +154,8 @@ pub(crate) async fn call_api(
 
         // Log successful response in verbose mode
         log_response(&status, &headers, &response_text, chat.verbose);
+        let _ = log_response_to_file(&status, &headers, &response_text, request_timestamp, &current_model);
+        let _ = log_raw_response_to_file(&response_text, request_timestamp, &current_model);
 
         let chat_response: ChatResponse = serde_json::from_str(&response_text)
             .with_context(|| format!("Failed to parse API response: {}", response_text))?;

@@ -4,7 +4,7 @@ use regex::Regex;
 
 use crate::KimiChat;
 use kimichat_models::{ModelType, Message, ToolCall, FunctionCall, ChatRequest, ChatResponse};
-use kimichat_logging::log_request_to_file;
+use kimichat_logging::{log_request_to_file, log_response_to_file, log_raw_response_to_file};
 
 /// Repair a malformed tool call using AI to fix the JSON arguments
 pub(crate) async fn repair_tool_call_with_model(
@@ -59,6 +59,12 @@ pub(crate) async fn repair_tool_call_with_model(
     // Make API call using BluModel's API URL
     let repair_api_url = crate::config::get_api_url(&chat.client_config, &ModelType::BluModel);
 
+    // Capture request timestamp for response logging correlation
+    let request_timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     // Log request to file for persistent debugging
     let _ = log_request_to_file(&repair_api_url, &repair_request, &ModelType::BluModel, &chat.api_key);
 
@@ -70,12 +76,21 @@ pub(crate) async fn repair_tool_call_with_model(
         .send()
         .await?;
 
-    if !response.status().is_success() {
+    let status = response.status();
+    let headers = response.headers().clone();
+
+    if !status.is_success() {
         let error_text = response.text().await?;
+        let _ = log_response_to_file(&status, &headers, &error_text, request_timestamp, &ModelType::BluModel);
+        let _ = log_raw_response_to_file(&error_text, request_timestamp, &ModelType::BluModel);
         anyhow::bail!("Repair API call failed: {}", error_text);
     }
 
-    let api_response: ChatResponse = response.json().await?;
+    let response_text = response.text().await?;
+    let _ = log_response_to_file(&status, &headers, &response_text, request_timestamp, &ModelType::BluModel);
+    let _ = log_raw_response_to_file(&response_text, request_timestamp, &ModelType::BluModel);
+
+    let api_response: ChatResponse = serde_json::from_str(&response_text)?;
 
     if let Some(choice) = api_response.choices.first() {
         let repaired_json = choice.message.content.trim();

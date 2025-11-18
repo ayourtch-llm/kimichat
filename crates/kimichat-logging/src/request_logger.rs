@@ -109,6 +109,99 @@ pub fn log_request_to_file(url: &str, request: &ChatRequest, model: &ModelType, 
     Ok(())
 }
 
+/// Log HTTP response to file for persistent debugging
+pub fn log_response_to_file(
+    status: &reqwest::StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    body: &str,
+    request_timestamp: u64,
+    model: &ModelType,
+) -> Result<()> {
+    // Use shared logs directory from utility function
+    let logs_dir = get_logs_dir()?;
+
+    // Create filename with timestamp and model name to match request file
+    let model_name = model.as_str_default().replace('/', "-");
+    let filename = format!("resp-{}-{}.txt", request_timestamp, model_name);
+    let file_path = logs_dir.join(filename);
+
+    // Build the log content
+    let mut log_content = String::new();
+    log_content.push_str(&format!("HTTP RESPONSE LOG\n"));
+    log_content.push_str(&format!("=================\n\n"));
+    log_content.push_str(&format!("Timestamp: {}\n", request_timestamp));
+    log_content.push_str(&format!("Model: {}\n\n", model.as_str_default()));
+
+    // Log status information
+    log_content.push_str(&format!("Status: {} {}\n\n",
+        status.as_u16(),
+        status.canonical_reason().unwrap_or("Unknown")
+    ));
+
+    // Log headers
+    log_content.push_str("Headers:\n");
+    for (name, value) in headers.iter() {
+        if let Ok(val_str) = value.to_str() {
+            log_content.push_str(&format!("  {}: {}\n", name.as_str(), val_str));
+        }
+    }
+
+    log_content.push_str("\nResponse Body:\n");
+    // Try to pretty-print JSON, fall back to raw text
+    if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(body) {
+        match serde_json::to_string_pretty(&json_val) {
+            Ok(pretty) => {
+                log_content.push_str(&pretty);
+                log_content.push_str("\n");
+            }
+            Err(_) => {
+                log_content.push_str(body);
+                log_content.push_str("\n");
+            }
+        }
+    } else {
+        // Not JSON, show raw
+        log_content.push_str(body);
+        log_content.push_str("\n");
+    }
+
+    // Add metadata at the end
+    log_content.push_str(&format!("\n---\n"));
+    log_content.push_str(&format!("Response Size: {} bytes\n", body.len()));
+    log_content.push_str(&format!("Content-Type: {}\n",
+        headers.get("content-type")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("unknown")
+    ));
+
+    // Write to file
+    fs::write(&file_path, log_content)
+        .with_context(|| format!("Failed to write response log to {}", file_path.display()))?;
+
+    Ok(())
+}
+
+/// Log pure raw response to file without any transformation or massage
+pub fn log_raw_response_to_file(
+    raw_response: &str,
+    request_timestamp: u64,
+    model: &ModelType,
+) -> Result<()> {
+    // Use shared logs directory from utility function
+    let logs_dir = get_logs_dir()?;
+
+    // Create filename for raw response with timestamp and model name
+    let model_name = model.as_str_default().replace('/', "-");
+    let filename = format!("resp-raw-{}-{}.txt", request_timestamp, model_name);
+    let file_path = logs_dir.join(filename);
+
+    // Write the pure raw response without any modification
+    fs::write(&file_path, raw_response)
+        .with_context(|| format!("Failed to write raw response log to {}", file_path.display()))?;
+
+    Ok(())
+}
+
 /// Log HTTP response details for debugging (console output)
 pub fn log_response(status: &reqwest::StatusCode, headers: &reqwest::header::HeaderMap, body: &str, verbose: bool) {
     if !verbose {
