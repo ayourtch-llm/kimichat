@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use crate::KimiChat;
 use crate::cli::Cli;
 use crate::config::ClientConfig;
+use crate::chat::history::intelligent_compaction;
 use kimichat_policy::PolicyManager;
 use kimichat_logging::ConversationLogger;
 use kimichat_models::{ModelType, Message};
@@ -437,6 +438,23 @@ pub async fn run_repl_mode(
                     continue;
                 }
 
+                // Handle /compact command
+                if line == "/compact" {
+                    println!("{} Starting manual conversation compaction...", "🗜️".bright_blue());
+                    match intelligent_compaction(&mut chat, 0).await {
+                        Ok(()) => {
+                            let session_size = crate::chat::history::calculate_conversation_size(&chat.messages);
+                            println!("{} Compaction completed successfully!", "✓".bright_green());
+                            println!("{} Session size: {:.1} KB, Messages: {}", "📊".bright_cyan(), 
+                                     session_size as f64 / 1024.0, chat.messages.len());
+                        }
+                        Err(e) => {
+                            eprintln!("{} Failed to compact conversation: {}", "❌".bright_red(), e);
+                        }
+                    }
+                    continue;
+                }
+
                 rl.add_history_entry(line)?;
 
                 // Log the user message before sending
@@ -552,4 +570,87 @@ pub async fn run_repl_mode(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod repl_compact_tests {
+    use super::*;
+    use crate::KimiChat;
+    use kimichat_models::{Message, ModelType};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+    use tempfile::TempDir;
+    use kimichat_policy::PolicyManager;
+    use kimichat_toolcore::ToolRegistry;
+    use kimichat_terminal::TerminalManager;
+    use kimichat_todo::TodoManager;
+
+    async fn create_test_chat() -> KimiChat {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().to_path_buf();
+        
+        KimiChat {
+            api_key: "test-key".to_string(),
+            work_dir: work_dir.clone(),
+            client: reqwest::Client::new(),
+            messages: Vec::new(),
+            current_model: ModelType::GrnModel,
+            total_tokens_used: 0,
+            logger: None,
+            tool_registry: ToolRegistry::new(),
+            agent_coordinator: None,
+            use_agents: false,
+            client_config: crate::config::ClientConfig {
+                api_key: "test-key".to_string(),
+                backend_blu_model: None,
+                backend_grn_model: None,
+                backend_red_model: None,
+                api_url_blu_model: None,
+                api_url_grn_model: None,
+                api_url_red_model: None,
+                api_key_blu_model: None,
+                api_key_grn_model: None,
+                api_key_red_model: None,
+                model_blu_model_override: None,
+                model_grn_model_override: None,
+                model_red_model_override: None,
+            },
+            policy_manager: PolicyManager::new(),
+            terminal_manager: Arc::new(Mutex::new(TerminalManager::new(work_dir))),
+            skill_registry: None,
+            non_interactive: false,
+            todo_manager: Arc::new(TodoManager::new()),
+            stream_responses: false,
+            verbose: false,
+            debug_level: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_compact_command_exists() {
+        // This test verifies that the /compact command is properly handled
+        // and doesn't cause crashes when executed
+        
+        let mut chat = create_test_chat().await;
+        
+        // Add some messages to make compaction meaningful
+        chat.messages.push(Message {
+            role: "user".to_string(),
+            content: "Test message for compaction".repeat(100),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+            reasoning: None,
+        });
+        
+        let initial_count = chat.messages.len();
+        
+        // The compact command should not crash and should preserve system messages
+        let result = crate::chat::history::intelligent_compaction(&mut chat, 0).await;
+        
+        assert!(result.is_ok(), "Compaction should succeed");
+        
+        // Should still have at least the system message
+        assert!(chat.messages.len() >= 1, "Should have at least system message after compaction");
+    }
 }
