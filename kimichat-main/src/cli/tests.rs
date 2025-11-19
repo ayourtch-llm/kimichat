@@ -439,4 +439,38 @@ mod tests {
         
         Ok(())
     }
+
+    #[test]
+    fn test_model_with_backend_and_url() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = parse_cli_from_args(&["--model", "foo@bar(someurl)"])?;
+        
+        // Verify that the model argument is parsed as a single string
+        assert_eq!(cli.model, Some("foo@bar(someurl)".to_string()));
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_model_with_backend_only() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = parse_cli_from_args(&["--model", "foo@bar"])?;
+        
+        // Verify that the model argument is parsed as a single string
+        assert_eq!(cli.model, Some("foo@bar".to_string()));
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_precedence_model_overrides() -> Result<(), Box<dyn std::error::Error>> {
+        let cli = parse_cli_from_args(&[
+            "--model-blu-model", "specific-blu",
+            "--model", "foo@bar(someurl)"
+        ])?;
+        
+        // Verify that both are parsed correctly
+        assert_eq!(cli.model_blu_model, Some("specific-blu".to_string()));
+        assert_eq!(cli.model, Some("foo@bar(someurl)".to_string()));
+        
+        Ok(())
+    }
 }

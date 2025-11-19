@@ -47,6 +47,16 @@ pub const ANTHROPIC_API_URL: &str = "https://api.anthropic.com";
 /// Default OpenAI API URL
 pub const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
 
+/// Get the default URL for a given backend type
+pub fn get_default_url_for_backend(backend: &BackendType) -> Option<String> {
+    match backend {
+        BackendType::Anthropic => Some(ANTHROPIC_API_URL.to_string()),
+        BackendType::Groq => Some(GROQ_API_URL.to_string()),
+        BackendType::OpenAI => Some(OPENAI_API_URL.to_string()),
+        BackendType::Llama => None, // Llama.cpp doesn't have a default URL
+    }
+}
+
 /// Default model names for each color
 pub const DEFAULT_BLU_MODEL: &str = "moonshotai/kimi-k2-instruct-0905";
 pub const DEFAULT_GRN_MODEL: &str = "openai/gpt-oss-120b";

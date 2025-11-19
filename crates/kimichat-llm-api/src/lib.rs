@@ -53,6 +53,9 @@
 pub mod client;
 pub mod config;
 
+#[cfg(test)]
+mod tests;
+
 // Re-export commonly used types
 pub use client::{
     LlmClient,
@@ -72,4 +75,5 @@ pub use config::{
     ANTHROPIC_API_URL,
     OPENAI_API_URL,
     normalize_api_url,
+    get_default_url_for_backend,
 };

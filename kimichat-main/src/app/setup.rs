@@ -7,6 +7,7 @@ use crate::cli::Cli;
 use crate::config::{ClientConfig, BackendType};
 use crate::config::helpers::get_model_config_from_env;
 use kimichat_policy::PolicyManager;
+use kimichat_llm_api::config::{parse_model_attings, GROQ_API_URL, ANTHROPIC_API_URL, OPENAI_API_URL, get_default_url_for_backend};
 
 /// Application configuration derived from CLI arguments and environment
 pub struct AppConfig {
@@ -121,10 +122,55 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
             }
         });
 
+    // Parse model@backend(url) format if present - this has the highest precedence
+    // and should override all other model configuration
+    let (mut model_blu_override_final, mut model_grn_override_final, mut model_red_override_final) = 
+        (model_blu_override, model_grn_override, model_red_override);
+    let (mut backend_blu_model_final, mut backend_grn_model_final, mut backend_red_model_final) = 
+        (backend_blu_model, backend_grn_model, backend_red_model);
+    let (mut api_url_blu_model_final, mut api_url_grn_model_final, mut api_url_red_model_final) = 
+        (api_url_blu_model, api_url_grn_model, api_url_red_model);
+
+    if let Some(model_config) = &cli.model {
+        // Check if this is the model@backend(url) format
+        if model_config.contains('@') {
+            let (parsed_model, parsed_backend, parsed_url) = parse_model_attings(model_config);
+            
+            eprintln!("{} Parsed model configuration: model='{}', backend={:?}, url={:?}", 
+                     "🔧".cyan(), parsed_model, parsed_backend, parsed_url);
+            
+            // Apply the parsed configuration to all models since this was a global --model flag
+            model_blu_override_final = Some(parsed_model.clone());
+            model_grn_override_final = Some(parsed_model.clone());
+            model_red_override_final = Some(parsed_model);
+            
+            if let Some(ref backend) = parsed_backend {
+                backend_blu_model_final = Some(backend.clone());
+                backend_grn_model_final = Some(backend.clone());
+                backend_red_model_final = Some(backend.clone());
+            }
+            
+            // Use the parsed URL, or if no URL was provided but we have a backend, use the default URL for that backend
+            let final_url = parsed_url.or_else(|| {
+                if let Some(ref backend) = parsed_backend {
+                    get_default_url_for_backend(backend)
+                } else {
+                    None
+                }
+            });
+            
+            if let Some(ref url) = final_url {
+                api_url_blu_model_final = Some(url.clone());
+                api_url_grn_model_final = Some(url.clone());
+                api_url_red_model_final = Some(url.clone());
+            }
+        }
+    }
+
     // API key is only required if at least one model uses Groq (no API URL specified and no per-model key)
-    let needs_groq_key = (api_url_blu_model.is_none() && api_key_blu_model.is_none())
-                      || (api_url_grn_model.is_none() && api_key_grn_model.is_none())
-                      || (api_url_red_model.is_none() && api_key_red_model.is_none());
+    let needs_groq_key = (api_url_blu_model_final.is_none() && api_key_blu_model.is_none())
+                      || (api_url_grn_model_final.is_none() && api_key_grn_model.is_none())
+                      || (api_url_red_model_final.is_none() && api_key_red_model.is_none());
 
     let api_key = if needs_groq_key {
         env::var("GROQ_API_KEY")
@@ -139,31 +185,31 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
     let work_dir = env::current_dir()?;
 
     // Create client configuration from CLI arguments
-    // Priority: specific flags override general --model flag, with auto-detection for Anthropic
+    // Priority: specific flags override general --model flag, but model@backend(url) format has highest precedence
     let client_config = ClientConfig {
         api_key: api_key.clone(),
-        backend_blu_model,
-        backend_grn_model,
-        backend_red_model,
-        api_url_blu_model: api_url_blu_model.clone(),
-        api_url_grn_model: api_url_grn_model.clone(),
-        api_url_red_model: api_url_red_model.clone(),
+        backend_blu_model: backend_blu_model_final,
+        backend_grn_model: backend_grn_model_final,
+        backend_red_model: backend_red_model_final,
+        api_url_blu_model: api_url_blu_model_final.clone(),
+        api_url_grn_model: api_url_grn_model_final.clone(),
+        api_url_red_model: api_url_red_model_final.clone(),
         api_key_blu_model,
         api_key_grn_model,
         api_key_red_model,
-        model_blu_model_override: model_blu_override.clone(),
-        model_grn_model_override: model_grn_override.clone(),
-        model_red_model_override: model_red_override.clone(),
+        model_blu_model_override: model_blu_override_final.clone(),
+        model_grn_model_override: model_grn_override_final.clone(),
+        model_red_model_override: model_red_override_final.clone(),
     };
 
     // Inform user about auto-detected Anthropic configuration
     if is_anthropic_blu {
-        if let Some(model_name) = model_blu_override.as_ref() {
+        if let Some(model_name) = model_blu_override_final.as_ref() {
             eprintln!("{} Anthropic detected for blu_model: using model '{}'", "🤖".cyan(), model_name);
         }
     }
     if is_anthropic_grn {
-        if let Some(model_name) = model_grn_override.as_ref() {
+        if let Some(model_name) = model_grn_override_final.as_ref() {
             eprintln!("{} Anthropic detected for grn_model: using model '{}'", "🤖".cyan(), model_name);
         }
     }
