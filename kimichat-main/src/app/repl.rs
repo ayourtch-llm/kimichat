@@ -42,34 +42,141 @@ pub async fn run_repl_mode(
         backend_type,
     );
 
-    // Show the actual current model configuration
+    // Comprehensive model configuration display
+    println!("{}", "═".repeat(80).bright_black());
+    println!("{}", "🤖 Model Configuration".bright_cyan().bold());
+    println!("{}", "═".repeat(80).bright_black());
+
+    // Current model display
     let current_model_display = match chat.current_model {
         ModelType::BluModel => format!("BluModel/{} (auto-switched from default)", chat.current_model.display_name()),
         ModelType::GrnModel => format!("GrnModel/{} (default)", chat.current_model.display_name()),
         ModelType::RedModel => format!("RedModel/{}", chat.current_model.display_name()),
     };
+    println!("{} {}", "📍 Current:".bright_green().bold(), current_model_display.bright_white());
 
-    // Show what backends are being used
-    let blu_backend = if chat.client_config.api_url_blu_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
-                       env::var("ANTHROPIC_AUTH_TOKEN_BLU").is_ok() {
-        "Anthropic API 🧠"
-    } else if chat.client_config.api_url_blu_model.is_some() {
-        "llama.cpp 🦙"
-    } else {
-        "Groq API 🚀"
+    // Function to get backend info
+    let get_backend_info = |model_type: ModelType| {
+        let (backend_name, url, model_name) = match model_type {
+            ModelType::BluModel => {
+                let backend = if chat.client_config.api_url_blu_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
+                               env::var("ANTHROPIC_AUTH_TOKEN_BLU").is_ok() {
+                    "Anthropic"
+                } else if chat.client_config.api_url_blu_model.is_some() {
+                    "llama.cpp"
+                } else {
+                    "Groq"
+                };
+                let url = chat.client_config.api_url_blu_model.as_ref()
+                    .map(|u| u.as_str())
+                    .unwrap_or("https://api.groq.com/openai/v1/chat/completions");
+                let model = chat.client_config.model_blu_model_override.as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| "moonshotai/kimi-k2-instruct-0905".to_string());
+                (backend, url, model)
+            }
+            ModelType::GrnModel => {
+                let backend = if chat.client_config.api_url_grn_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
+                               env::var("ANTHROPIC_AUTH_TOKEN_GRN").is_ok() {
+                    "Anthropic"
+                } else if chat.client_config.api_url_grn_model.is_some() {
+                    "llama.cpp"
+                } else {
+                    "Groq"
+                };
+                let url = chat.client_config.api_url_grn_model.as_ref()
+                    .map(|u| u.as_str())
+                    .unwrap_or("https://api.groq.com/openai/v1/chat/completions");
+                let model = chat.client_config.model_grn_model_override.as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| "openai/gpt-oss-120b".to_string());
+                (backend, url, model)
+            }
+            ModelType::RedModel => {
+                let backend = if chat.client_config.api_url_red_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
+                               env::var("ANTHROPIC_AUTH_TOKEN_RED").is_ok() {
+                    "Anthropic"
+                } else if chat.client_config.api_url_red_model.is_some() {
+                    "llama.cpp"
+                } else {
+                    "Groq"
+                };
+                let url = chat.client_config.api_url_red_model.as_ref()
+                    .map(|u| u.as_str())
+                    .unwrap_or("https://api.groq.com/openai/v1/chat/completions");
+                let model = chat.client_config.model_red_model_override.as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| "meta-llama/llama-3.1-70b-versatile".to_string());
+                (backend, url, model)
+            }
+        };
+        (backend_name.to_string(), url.to_string(), model_name)
     };
 
-    let grn_backend = if chat.client_config.api_url_grn_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
-                       env::var("ANTHROPIC_AUTH_TOKEN_GRN").is_ok() {
-        "Anthropic API 🧠"
-    } else if chat.client_config.api_url_grn_model.is_some() {
-        "llama.cpp 🦙"
-    } else {
-        "Groq API 🚀"
+    // BluModel details
+    let (blu_backend, blu_url, blu_model) = get_backend_info(ModelType::BluModel);
+    let blu_icon = match blu_backend.as_str() {
+        "Anthropic" => "🧠",
+        "llama.cpp" => "🦙",
+        "Groq" => "🚀",
+        _ => "⚙️",
+    };
+    println!("{} {} ({})", "BluModel:".bright_blue().bold(), blu_model, blu_backend.bright_black());
+    println!("   {} {}", "API:".bright_black(), blu_url.bright_black());
+
+    // GrnModel details
+    let (grn_backend, grn_url, grn_model) = get_backend_info(ModelType::GrnModel);
+    let grn_icon = match grn_backend.as_str() {
+        "Anthropic" => "🧠",
+        "llama.cpp" => "🦙",
+        "Groq" => "🚀",
+        _ => "⚙️",
+    };
+    println!("{} {} ({}) ⭐", "GrnModel:".bright_green().bold(), grn_model, grn_backend.bright_black());
+
+    // RedModel details
+    let (red_backend, red_url, red_model) = get_backend_info(ModelType::RedModel);
+    let red_icon = match red_backend.as_str() {
+        "Anthropic" => "🧠",
+        "llama.cpp" => "🦙",
+        "Groq" => "🚀",
+        _ => "⚙️",
+    };
+    println!("{} {} ({})", "RedModel:".bright_red().bold(), red_model, red_backend.bright_black());
+    println!("   {} {}", "API:".bright_black(), red_url.bright_black());
+
+    // Show API key configuration (without exposing actual keys)
+    println!();
+    println!("{}", "🔑 API Key Configuration:".bright_yellow().bold());
+    let show_key_status = |model_name: &str, has_specific_key: bool, env_var: &str| {
+        if has_specific_key {
+            println!("   {}: {} (configured)", model_name.bright_white(), "✓ Specific key".green());
+        } else if env::var(env_var).is_ok() {
+            println!("   {}: {} (from {})", model_name.bright_white(), "✓".green(), env_var.bright_black());
+        } else if env::var("ANTHROPIC_AUTH_TOKEN").is_ok() || env::var("GROQ_API_KEY").is_ok() {
+            println!("   {}: {} (using global key)", model_name.bright_white(), "✓".green());
+        } else {
+            println!("   {}: {} (no key found)", model_name.bright_white(), "⚠️".yellow());
+        }
     };
 
-    println!("{}", format!("Default model: {} • BluModel uses {}, GrnModel uses {}",
-        current_model_display, blu_backend, grn_backend).bright_black());
+    show_key_status(
+        "BluModel",
+        chat.client_config.api_key_blu_model.is_some(),
+        "ANTHROPIC_AUTH_TOKEN_BLU"
+    );
+    show_key_status(
+        "GrnModel",
+        chat.client_config.api_key_grn_model.is_some(),
+        "ANTHROPIC_AUTH_TOKEN_GRN"
+    );
+    show_key_status(
+        "RedModel",
+        chat.client_config.api_key_red_model.is_some(),
+        "ANTHROPIC_AUTH_TOKEN_RED"
+    );
+
+    println!("{}", "═".repeat(80).bright_black());
 
     // Debug info (shown at debug level 1+)
     if chat.should_show_debug(1) {
