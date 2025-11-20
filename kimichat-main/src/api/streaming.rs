@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::io::Write;
 
 use crate::KimiChat;
-use kimichat_models::{ModelType, Message, Usage, ChatRequest, StreamChunk};
+use kimichat_models::{ModelColor, Message, Usage, ChatRequest, StreamChunk};
 use kimichat_agents::{ToolDefinition, ChatMessage};
 use kimichat_logging::{log_request, log_request_to_file, log_response, log_response_to_file, log_raw_response_to_file, log_stream_chunk};
 use kimichat_toolcore::parse_xml_tool_calls;
@@ -13,7 +13,7 @@ use crate::{ToolCall, FunctionCall};
 pub(crate) async fn call_api_streaming(
     chat: &KimiChat,
     orig_messages: &[Message],
-) -> Result<(Message, Option<Usage>, ModelType)> {
+) -> Result<(Message, Option<Usage>, ModelColor)> {
     use std::io::{self, Write};
     use futures_util::StreamExt;
 
@@ -28,9 +28,9 @@ pub(crate) async fn call_api_streaming(
 
     let request = ChatRequest {
         model: current_model.as_str(
-            chat.client_config.model_blu_model_override.as_deref(),
-            chat.client_config.model_grn_model_override.as_deref(),
-            chat.client_config.model_red_model_override.as_deref()
+            chat.client_config.get_model_override(ModelColor::BluModel).as_deref().map(|x| x.as_str()),
+            chat.client_config.get_model_override(ModelColor::GrnModel).as_deref().map(|x| x.as_str()),
+            chat.client_config.get_model_override(ModelColor::RedModel).as_deref().map(|x| x.as_str())
         ).to_string(),
         messages,
         tools: chat.get_tools(),
@@ -314,8 +314,8 @@ pub(crate) async fn call_api_streaming(
 pub(crate) async fn call_api_streaming_with_llm_client(
     chat: &KimiChat,
     messages: &[Message],
-    model: &ModelType,
-) -> Result<(Message, Option<Usage>, ModelType)> {
+    model: &ModelColor,
+) -> Result<(Message, Option<Usage>, ModelColor)> {
     if chat.should_show_debug(1) {
         println!("🔧 DEBUG: call_api_streaming_with_llm_client called with model: {:?}", model);
     }

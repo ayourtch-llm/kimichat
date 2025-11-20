@@ -11,7 +11,7 @@ use crate::config::ClientConfig;
 use crate::chat::history::intelligent_compaction;
 use kimichat_policy::PolicyManager;
 use kimichat_logging::ConversationLogger;
-use kimichat_models::{ModelType, Message};
+use kimichat_models::{ModelColor, Message};
 
 /// Run interactive REPL mode
 pub async fn run_repl_mode(
@@ -49,64 +49,70 @@ pub async fn run_repl_mode(
 
     // Current model display
     let current_model_display = match chat.current_model {
-        ModelType::BluModel => format!("BluModel/{} (auto-switched from default)", chat.current_model.display_name()),
-        ModelType::GrnModel => format!("GrnModel/{} (default)", chat.current_model.display_name()),
-        ModelType::RedModel => format!("RedModel/{}", chat.current_model.display_name()),
+        ModelColor::BluModel => format!("BluModel/{} (auto-switched from default)", chat.current_model.display_name()),
+        ModelColor::GrnModel => format!("GrnModel/{} (default)", chat.current_model.display_name()),
+        ModelColor::RedModel => format!("RedModel/{}", chat.current_model.display_name()),
     };
     println!("{} {}", "📍 Current:".bright_green().bold(), current_model_display.bright_white());
 
     // Function to get backend info
-    let get_backend_info = |model_type: ModelType| {
+    let get_backend_info = |model_type: ModelColor| {
         let (backend_name, url, model_name) = match model_type {
-            ModelType::BluModel => {
-                let backend = if chat.client_config.api_url_blu_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
+            ModelColor::BluModel => {
+                let backend = if chat.client_config.get_api_url(ModelColor::BluModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
                                env::var("ANTHROPIC_AUTH_TOKEN_BLU").is_ok() {
                     "Anthropic"
-                } else if chat.client_config.api_url_blu_model.is_some() {
+                } else if chat.client_config.get_api_url(ModelColor::BluModel).is_some() {
                     "llama.cpp"
                 } else {
                     "Groq"
                 };
-                let url = chat.client_config.api_url_blu_model.as_ref()
-                    .map(|u| u.as_str())
-                    .unwrap_or("https://api.groq.com/openai/v1/chat/completions");
-                let model = chat.client_config.model_blu_model_override.as_ref()
-                    .cloned()
-                    .unwrap_or_else(|| "moonshotai/kimi-k2-instruct-0905".to_string());
+                let url = chat.client_config.get_api_url(ModelColor::BluModel)
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions");
+                let model = chat.client_config.get_model_override(ModelColor::BluModel)
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or_else(|| "moonshotai/kimi-k2-instruct-0905");
                 (backend, url, model)
             }
-            ModelType::GrnModel => {
-                let backend = if chat.client_config.api_url_grn_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
+            ModelColor::GrnModel => {
+                let backend = if chat.client_config.get_api_url(ModelColor::GrnModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
                                env::var("ANTHROPIC_AUTH_TOKEN_GRN").is_ok() {
                     "Anthropic"
-                } else if chat.client_config.api_url_grn_model.is_some() {
+                } else if chat.client_config.get_api_url(ModelColor::GrnModel).is_some() {
                     "llama.cpp"
                 } else {
                     "Groq"
                 };
-                let url = chat.client_config.api_url_grn_model.as_ref()
-                    .map(|u| u.as_str())
-                    .unwrap_or("https://api.groq.com/openai/v1/chat/completions");
-                let model = chat.client_config.model_grn_model_override.as_ref()
-                    .cloned()
-                    .unwrap_or_else(|| "openai/gpt-oss-120b".to_string());
+                let url = chat.client_config.get_api_url(ModelColor::GrnModel)
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions");
+                let model = chat.client_config.get_model_override(ModelColor::GrnModel)
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or_else(|| "openai/gpt-oss-120b");
                 (backend, url, model)
             }
-            ModelType::RedModel => {
-                let backend = if chat.client_config.api_url_red_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
+            ModelColor::RedModel => {
+                let backend = if chat.client_config.get_api_url(ModelColor::RedModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
                                env::var("ANTHROPIC_AUTH_TOKEN_RED").is_ok() {
                     "Anthropic"
-                } else if chat.client_config.api_url_red_model.is_some() {
+                } else if chat.client_config.get_api_url(ModelColor::RedModel).is_some() {
                     "llama.cpp"
                 } else {
                     "Groq"
                 };
-                let url = chat.client_config.api_url_red_model.as_ref()
-                    .map(|u| u.as_str())
-                    .unwrap_or("https://api.groq.com/openai/v1/chat/completions");
-                let model = chat.client_config.model_red_model_override.as_ref()
-                    .cloned()
-                    .unwrap_or_else(|| "meta-llama/llama-3.1-70b-versatile".to_string());
+                let url = chat.client_config.get_api_url(ModelColor::RedModel)
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions");
+                let model = chat.client_config.get_model_override(ModelColor::RedModel)
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or_else(|| "meta-llama/llama-3.1-70b-versatile");
                 (backend, url, model)
             }
         };
@@ -114,10 +120,10 @@ pub async fn run_repl_mode(
     };
 
     // Function to get API key preview for a model based on its resolved configuration
-    let get_api_key_preview = |model_type: ModelType, _backend: &str| {
+    let get_api_key_preview = |model_type: ModelColor, _backend: &str| {
         let key_preview = match model_type {
-            ModelType::BluModel => {
-                if let Some(key) = &chat.client_config.api_key_blu_model {
+            ModelColor::BluModel => {
+                if let Some(key) = chat.client_config.get_api_key(ModelColor::BluModel) {
                     Some(format!("{}***", &key[..key.len().min(3)]))
                 } else if !chat.client_config.api_key.is_empty() {
                     Some(format!("{}***", &chat.client_config.api_key[..chat.client_config.api_key.len().min(3)]))
@@ -125,8 +131,8 @@ pub async fn run_repl_mode(
                     None
                 }
             }
-            ModelType::GrnModel => {
-                if let Some(key) = &chat.client_config.api_key_grn_model {
+            ModelColor::GrnModel => {
+                if let Some(key) = chat.client_config.get_api_key(ModelColor::GrnModel) {
                     Some(format!("{}***", &key[..key.len().min(3)]))
                 } else if !chat.client_config.api_key.is_empty() {
                     Some(format!("{}***", &chat.client_config.api_key[..chat.client_config.api_key.len().min(3)]))
@@ -134,8 +140,8 @@ pub async fn run_repl_mode(
                     None
                 }
             }
-            ModelType::RedModel => {
-                if let Some(key) = &chat.client_config.api_key_red_model {
+            ModelColor::RedModel => {
+                if let Some(key) = chat.client_config.get_api_key(ModelColor::RedModel) {
                     Some(format!("{}***", &key[..key.len().min(3)]))
                 } else if !chat.client_config.api_key.is_empty() {
                     Some(format!("{}***", &chat.client_config.api_key[..chat.client_config.api_key.len().min(3)]))
@@ -149,7 +155,7 @@ pub async fn run_repl_mode(
     };
 
     // BluModel details
-    let (blu_backend, blu_url, blu_model) = get_backend_info(ModelType::BluModel);
+    let (blu_backend, blu_url, blu_model) = get_backend_info(ModelColor::BluModel);
     let blu_icon = match blu_backend.as_str() {
         "Anthropic" => "🧠",
         "llama.cpp" => "🦙",
@@ -158,12 +164,12 @@ pub async fn run_repl_mode(
     };
     println!("{} {} ({})", "BluModel:".bright_blue().bold(), blu_model, blu_backend.bright_black());
     println!("   {} {}", "API:".bright_black(), blu_url.bright_black());
-    if let Some(key_preview) = get_api_key_preview(ModelType::BluModel, &blu_backend) {
+    if let Some(key_preview) = get_api_key_preview(ModelColor::BluModel, &blu_backend) {
         println!("   {} {}", "Key:".bright_black(), key_preview);
     }
 
     // GrnModel details
-    let (grn_backend, grn_url, grn_model) = get_backend_info(ModelType::GrnModel);
+    let (grn_backend, grn_url, grn_model) = get_backend_info(ModelColor::GrnModel);
     let grn_icon = match grn_backend.as_str() {
         "Anthropic" => "🧠",
         "llama.cpp" => "🦙",
@@ -171,12 +177,12 @@ pub async fn run_repl_mode(
         _ => "⚙️",
     };
     println!("{} {} ({}) ⭐", "GrnModel:".bright_green().bold(), grn_model, grn_backend.bright_black());
-    if let Some(key_preview) = get_api_key_preview(ModelType::GrnModel, &grn_backend) {
+    if let Some(key_preview) = get_api_key_preview(ModelColor::GrnModel, &grn_backend) {
         println!("   {} {}", "Key:".bright_black(), key_preview);
     }
 
     // RedModel details
-    let (red_backend, red_url, red_model) = get_backend_info(ModelType::RedModel);
+    let (red_backend, red_url, red_model) = get_backend_info(ModelColor::RedModel);
     let red_icon = match red_backend.as_str() {
         "Anthropic" => "🧠",
         "llama.cpp" => "🦙",
@@ -185,7 +191,7 @@ pub async fn run_repl_mode(
     };
     println!("{} {} ({})", "RedModel:".bright_red().bold(), red_model, red_backend.bright_black());
     println!("   {} {}", "API:".bright_black(), red_url.bright_black());
-    if let Some(key_preview) = get_api_key_preview(ModelType::RedModel, &red_backend) {
+    if let Some(key_preview) = get_api_key_preview(ModelColor::RedModel, &red_backend) {
         println!("   {} {}", "Key:".bright_black(), key_preview);
     }
 
@@ -193,8 +199,8 @@ pub async fn run_repl_mode(
 
     // Debug info (shown at debug level 1+)
     if chat.should_show_debug(1) {
-        println!("{}", format!("🔧 DEBUG: blu_model URL: {:?}", chat.client_config.api_url_blu_model).bright_black());
-        println!("{}", format!("🔧 DEBUG: grn_model URL: {:?}", chat.client_config.api_url_grn_model).bright_black());
+        println!("{}", format!("🔧 DEBUG: blu_model URL: {:?}", chat.client_config.get_api_url(ModelColor::BluModel)).bright_black());
+        println!("{}", format!("🔧 DEBUG: grn_model URL: {:?}", chat.client_config.get_api_url(ModelColor::GrnModel)).bright_black());
         println!("{}", format!("🔧 DEBUG: Current model: {:?}", chat.current_model).bright_black());
     }
 
@@ -693,7 +699,7 @@ pub async fn run_repl_mode(
 #[cfg(test)]
 mod repl_compact_tests {
     use crate::KimiChat;
-    use kimichat_models::{Message, ModelType};
+    use kimichat_models::{Message, ModelColor};
     use std::sync::Arc;
     use tokio::sync::Mutex;
     use tempfile::TempDir;
@@ -711,27 +717,13 @@ mod repl_compact_tests {
             work_dir: work_dir.clone(),
             client: reqwest::Client::new(),
             messages: Vec::new(),
-            current_model: ModelType::GrnModel,
+            current_model: ModelColor::GrnModel,
             total_tokens_used: 0,
             logger: None,
             tool_registry: ToolRegistry::new(),
             agent_coordinator: None,
             use_agents: false,
-            client_config: crate::config::ClientConfig {
-                api_key: "test-key".to_string(),
-                backend_blu_model: None,
-                backend_grn_model: None,
-                backend_red_model: None,
-                api_url_blu_model: None,
-                api_url_grn_model: None,
-                api_url_red_model: None,
-                api_key_blu_model: None,
-                api_key_grn_model: None,
-                api_key_red_model: None,
-                model_blu_model_override: None,
-                model_grn_model_override: None,
-                model_red_model_override: None,
-            },
+            client_config: crate::config::ClientConfig::new(),
             policy_manager: PolicyManager::new(),
             terminal_manager: Arc::new(Mutex::new(TerminalManager::new(work_dir))),
             skill_registry: None,

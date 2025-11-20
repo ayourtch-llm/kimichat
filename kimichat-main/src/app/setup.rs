@@ -287,18 +287,26 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
     // Priority: specific flags override general --model flag, but model@backend(url) format has highest precedence
     let client_config = ClientConfig {
         api_key: api_key.clone(),
-        backend_blu_model: backend_blu_model_final,
-        backend_grn_model: backend_grn_model_final,
-        backend_red_model: backend_red_model_final,
-        api_url_blu_model: api_url_blu_model_final.clone(),
-        api_url_grn_model: api_url_grn_model_final.clone(),
-        api_url_red_model: api_url_red_model_final.clone(),
-        api_key_blu_model,
-        api_key_grn_model,
-        api_key_red_model,
-        model_blu_model_override: model_blu_override_final.clone(),
-        model_grn_model_override: model_grn_override_final.clone(),
-        model_red_model_override: model_red_override_final.clone(),
+        backends: [
+            backend_blu_model_final,
+            backend_grn_model_final,
+            backend_red_model_final,
+        ],
+        api_urls: [
+            api_url_blu_model_final.clone(),
+            api_url_grn_model_final.clone(),
+            api_url_red_model_final.clone(),
+        ],
+        api_keys: [
+            api_key_blu_model,
+            api_key_grn_model,
+            api_key_red_model,
+        ],
+        model_overrides: [
+            model_blu_override_final.clone(),
+            model_grn_override_final.clone(),
+            model_red_override_final.clone(),
+        ],
     };
 
     // Inform user about auto-detected Anthropic configuration

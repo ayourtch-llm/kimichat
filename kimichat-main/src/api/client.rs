@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::KimiChat;
-use kimichat_models::{ModelType, Message, Usage, ChatRequest, ChatResponse};
+use kimichat_models::{ModelColor, Message, Usage, ChatRequest, ChatResponse};
 use kimichat_agents::{ToolDefinition, ChatMessage};
 use kimichat_logging::{log_request, log_request_to_file, log_response, log_response_to_file, log_raw_response_to_file};
 use kimichat_logging::safe_truncate;
@@ -15,7 +15,7 @@ use crate::MAX_RETRIES;
 pub(crate) async fn call_api(
     chat: &KimiChat,
     orig_messages: &[Message],
-) -> Result<(Message, Option<Usage>, ModelType)> {
+) -> Result<(Message, Option<Usage>, ModelColor)> {
     let current_model = chat.current_model.clone();
     // Clone messages and strip reasoning field (only supported by some models like Groq)
     let messages: Vec<Message> = orig_messages.iter().map(|m| {
@@ -26,9 +26,9 @@ pub(crate) async fn call_api(
 
     // Check if we need to use the new LlmClient system for Anthropic-compatible APIs
     let should_use_anthropic =
-        (chat.client_config.api_url_blu_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
-        (chat.client_config.api_url_grn_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
-        (chat.client_config.api_url_red_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false));
+        (chat.client_config.get_api_url(ModelColor::BluModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
+        (chat.client_config.get_api_url(ModelColor::GrnModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
+        (chat.client_config.get_api_url(ModelColor::RedModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false));
 
     if chat.should_show_debug(1) {
         println!("🔧 DEBUG: current_model = {:?}", current_model);
@@ -50,9 +50,9 @@ pub(crate) async fn call_api(
     loop {
         let request = ChatRequest {
             model: current_model.as_str(
-                chat.client_config.model_blu_model_override.as_deref(),
-                chat.client_config.model_grn_model_override.as_deref(),
-                chat.client_config.model_red_model_override.as_deref()
+                chat.client_config.get_model_override(ModelColor::BluModel).as_deref().map(|x| x.as_str()),
+                chat.client_config.get_model_override(ModelColor::GrnModel).as_deref().map(|x| x.as_str()),
+                chat.client_config.get_model_override(ModelColor::RedModel).as_deref().map(|x| x.as_str())
             ).to_string(),
             messages: messages.clone(),
             tools: chat.get_tools(),
@@ -178,15 +178,15 @@ pub(crate) async fn call_api(
 pub(crate) async fn call_api_with_llm_client(
     chat: &KimiChat,
     messages: &[Message],
-    model: &ModelType,
-) -> Result<(Message, Option<Usage>, ModelType)> {
+    model: &ModelColor,
+) -> Result<(Message, Option<Usage>, ModelColor)> {
     if chat.should_show_debug(1) {
         println!("🔧 DEBUG: call_api_with_llm_client called with model: {:?}", model);
     }
     if chat.should_show_debug(2) {
-        println!("🔧 DEBUG: client_config.api_url_blu_model: {:?}", chat.client_config.api_url_blu_model);
-        println!("🔧 DEBUG: client_config.api_url_grn_model: {:?}", chat.client_config.api_url_grn_model);
-        println!("🔧 DEBUG: client_config.api_url_red_model: {:?}", chat.client_config.api_url_red_model);
+        println!("🔧 DEBUG: client_config.get_api_url(BluModel): {:?}", chat.client_config.get_api_url(ModelColor::BluModel));
+        println!("🔧 DEBUG: client_config.get_api_url(GrnModel): {:?}", chat.client_config.get_api_url(ModelColor::GrnModel));
+        println!("🔧 DEBUG: client_config.get_api_url(RedModel): {:?}", chat.client_config.get_api_url(ModelColor::RedModel));
     }
 
     // Convert old Message format to new ChatMessage format

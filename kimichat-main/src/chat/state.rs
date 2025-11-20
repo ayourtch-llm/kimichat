@@ -2,13 +2,13 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-use kimichat_models::{Message, ModelType};
+use kimichat_models::{Message, ModelColor};
 
 /// Serializable state for saving/loading conversations
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChatState {
     pub messages: Vec<Message>,
-    pub current_model: ModelType,
+    pub current_model: ModelColor,
     pub total_tokens_used: usize,
     pub version: String,
 }
@@ -17,7 +17,7 @@ impl ChatState {
     /// Create a new ChatState from the given parameters
     pub fn new(
         messages: Vec<Message>,
-        current_model: ModelType,
+        current_model: ModelColor,
         total_tokens_used: usize,
     ) -> Self {
         Self {
@@ -59,7 +59,7 @@ impl ChatState {
 /// Save conversation state to a file (standalone function for backward compatibility)
 pub fn save_state(
     messages: &[Message],
-    current_model: &ModelType,
+    current_model: &ModelColor,
     total_tokens_used: usize,
     file_path: &str,
 ) -> Result<String> {
@@ -72,7 +72,7 @@ pub fn save_state(
 }
 
 /// Load conversation state from a file (standalone function)
-pub fn load_state(file_path: &str) -> Result<(Vec<Message>, ModelType, usize, String)> {
+pub fn load_state(file_path: &str) -> Result<(Vec<Message>, ModelColor, usize, String)> {
     let state = ChatState::load(file_path)?;
     Ok((
         state.messages,

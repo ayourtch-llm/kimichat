@@ -1,19 +1,46 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Model types supported by the system
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ModelType {
-    BluModel,
-    GrnModel,
-    RedModel,
+/// Model colors supported by the system
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModelColor {
+    BluModel = 0,
+    GrnModel = 1,
+    RedModel = 2,
 }
 
-impl ModelType {
+impl ModelColor {
+    /// Total number of model colors
+    pub const COUNT: usize = 3;
+    
+    /// Get an iterator over all model colors
+    pub fn iter() -> impl Iterator<Item = ModelColor> {
+        [ModelColor::BluModel, ModelColor::GrnModel, ModelColor::RedModel]
+            .iter().copied()
+    }
+
+    /// Get the display name for the model
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            ModelColor::BluModel => "Kimi-K2 (BluModel)",
+            ModelColor::GrnModel => "GPT-OSS (GrnModel)",
+            ModelColor::RedModel => "Llama-3.1-70B (RedModel)",
+        }
+    }
+
+    /// Get the default model for this color
+    pub fn default_model(&self) -> String {
+        match self {
+            ModelColor::BluModel => "moonshotai/kimi-k2-instruct-0905".to_string(),
+            ModelColor::GrnModel => "openai/gpt-oss-120b".to_string(),
+            ModelColor::RedModel => "meta-llama/llama-3.1-70b-versatile".to_string(),
+        }
+    }
+
     pub fn as_str_default(&self) -> String {
         match self {
-            ModelType::BluModel => "moonshotai/kimi-k2-instruct-0905".to_string(),
-            ModelType::GrnModel => "openai/gpt-oss-120b".to_string(),
-            ModelType::RedModel => "meta-llama/llama-3.1-70b-versatile".to_string(),
+            ModelColor::BluModel => "moonshotai/kimi-k2-instruct-0905".to_string(),
+            ModelColor::GrnModel => "openai/gpt-oss-120b".to_string(),
+            ModelColor::RedModel => "meta-llama/llama-3.1-70b-versatile".to_string(),
         }
     }
 
@@ -25,52 +52,44 @@ impl ModelType {
         red_model_override: Option<&str>,
     ) -> String {
         match self {
-            ModelType::BluModel => blu_model_override
+            ModelColor::BluModel => blu_model_override
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| self.as_str_default()),
-            ModelType::GrnModel => grn_model_override
+            ModelColor::GrnModel => grn_model_override
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| self.as_str_default()),
-            ModelType::RedModel => red_model_override
+            ModelColor::RedModel => red_model_override
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| self.as_str_default()),
-        }
-    }
-
-    pub fn display_name(&self) -> String {
-        match self {
-            ModelType::BluModel => "Kimi-K2-Instruct-0905".to_string(),
-            ModelType::GrnModel => "GPT-OSS-120B".to_string(),
-            ModelType::RedModel => "Llama-3.1-70B-Versatile".to_string(),
         }
     }
 
     pub fn from_string(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "blu_model" | "blu-model" | "blumodel" => ModelType::BluModel,
-            "grn_model" | "grn-model" | "grnmodel" => ModelType::GrnModel,
-            "red_model" | "red-model" | "redmodel" => ModelType::RedModel,
+            "blu_model" | "blu-model" | "blumodel" => ModelColor::BluModel,
+            "grn_model" | "grn-model" | "grnmodel" => ModelColor::GrnModel,
+            "red_model" | "red-model" | "redmodel" => ModelColor::RedModel,
             _ => {
                 // For backward compatibility:
                 // - Anthropic models default to BluModel
                 // - Custom models default to GrnModel
                 if s.to_lowercase().contains("anthropic") || s.to_lowercase().contains("claude") {
-                    ModelType::BluModel // Anthropic models map to BluModel
+                    ModelColor::BluModel // Anthropic models map to BluModel
                 } else if s.to_lowercase().contains("openai") || s.to_lowercase().contains("gpt") {
-                    ModelType::GrnModel // OpenAI models map to GrnModel
+                    ModelColor::GrnModel // OpenAI models map to GrnModel
                 } else {
-                    ModelType::GrnModel // Default to GrnModel for other custom models
+                    ModelColor::GrnModel // Default to GrnModel for other custom models
                 }
             }
         }
     }
 }
 
-impl std::str::FromStr for ModelType {
+impl std::str::FromStr for ModelColor {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(ModelType::from_string(s))
+        Ok(ModelColor::from_string(s))
     }
 }
 

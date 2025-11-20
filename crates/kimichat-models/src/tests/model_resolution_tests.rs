@@ -1,16 +1,16 @@
 #[cfg(test)]
 mod model_resolution_tests {
-    use crate::types::ModelType;
+    use crate::types::ModelColor;
 
     #[test]
     fn test_default_model_resolution() {
         assert_eq!(
-            ModelType::BluModel.as_str_default(),
+            ModelColor::BluModel.as_str_default(),
             "moonshotai/kimi-k2-instruct-0905"
         );
-        assert_eq!(ModelType::GrnModel.as_str_default(), "openai/gpt-oss-120b");
+        assert_eq!(ModelColor::GrnModel.as_str_default(), "openai/gpt-oss-120b");
         assert_eq!(
-            ModelType::RedModel.as_str_default(),
+            ModelColor::RedModel.as_str_default(),
             "meta-llama/llama-3.1-70b-versatile"
         );
     }
@@ -22,7 +22,7 @@ mod model_resolution_tests {
         let no_red = None;
 
         assert_eq!(
-            ModelType::BluModel.as_str(custom_blu, no_grn, no_red),
+            ModelColor::BluModel.as_str(custom_blu, no_grn, no_red),
             "custom/blu-model"
         );
     }
@@ -34,7 +34,7 @@ mod model_resolution_tests {
         let no_red = None;
 
         assert_eq!(
-            ModelType::GrnModel.as_str(no_blu, custom_grn, no_red),
+            ModelColor::GrnModel.as_str(no_blu, custom_grn, no_red),
             "custom/grn-model"
         );
     }
@@ -46,7 +46,7 @@ mod model_resolution_tests {
         let custom_red = Some("custom/red-model");
 
         assert_eq!(
-            ModelType::RedModel.as_str(no_blu, no_grn, custom_red),
+            ModelColor::RedModel.as_str(no_blu, no_grn, custom_red),
             "custom/red-model"
         );
     }
@@ -56,15 +56,15 @@ mod model_resolution_tests {
         let no_override = None;
 
         assert_eq!(
-            ModelType::BluModel.as_str(no_override, no_override, no_override),
+            ModelColor::BluModel.as_str(no_override, no_override, no_override),
             "moonshotai/kimi-k2-instruct-0905"
         );
         assert_eq!(
-            ModelType::GrnModel.as_str(no_override, no_override, no_override),
+            ModelColor::GrnModel.as_str(no_override, no_override, no_override),
             "openai/gpt-oss-120b"
         );
         assert_eq!(
-            ModelType::RedModel.as_str(no_override, no_override, no_override),
+            ModelColor::RedModel.as_str(no_override, no_override, no_override),
             "meta-llama/llama-3.1-70b-versatile"
         );
     }
@@ -81,15 +81,15 @@ mod model_resolution_tests {
 
         // Each model should only use its own override
         assert_eq!(
-            ModelType::BluModel.as_str(blu_override, grn_override, red_override),
+            ModelColor::BluModel.as_str(blu_override, grn_override, red_override),
             "blu-override"
         );
         assert_eq!(
-            ModelType::GrnModel.as_str(blu_override, grn_override, red_override),
+            ModelColor::GrnModel.as_str(blu_override, grn_override, red_override),
             "grn-override"
         );
         assert_eq!(
-            ModelType::RedModel.as_str(blu_override, grn_override, red_override),
+            ModelColor::RedModel.as_str(blu_override, grn_override, red_override),
             "red-override"
         );
     }
@@ -102,15 +102,15 @@ mod model_resolution_tests {
 
         // Test various combinations
         assert_eq!(
-            ModelType::BluModel.as_str(blu_override, no_grn, red_override),
+            ModelColor::BluModel.as_str(blu_override, no_grn, red_override),
             "custom-blu"
         );
         assert_eq!(
-            ModelType::GrnModel.as_str(blu_override, no_grn, red_override),
+            ModelColor::GrnModel.as_str(blu_override, no_grn, red_override),
             "openai/gpt-oss-120b" // Falls back to default
         );
         assert_eq!(
-            ModelType::RedModel.as_str(blu_override, no_grn, red_override),
+            ModelColor::RedModel.as_str(blu_override, no_grn, red_override),
             "custom-red"
         );
     }
@@ -122,7 +122,7 @@ mod model_resolution_tests {
 
         // Empty string overrides should be used (not fall back to default)
         assert_eq!(
-            ModelType::BluModel.as_str(empty_override, no_override, no_override),
+            ModelColor::BluModel.as_str(empty_override, no_override, no_override),
             ""
         );
     }

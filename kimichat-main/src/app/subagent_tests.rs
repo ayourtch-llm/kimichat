@@ -48,21 +48,9 @@ mod tests {
     }
 
     fn create_test_config() -> ClientConfig {
-        ClientConfig {
-            api_key: "test_key".to_string(),
-            backend_blu_model: None,
-            backend_grn_model: None,
-            backend_red_model: None,
-            api_url_blu_model: None,
-            api_url_grn_model: None,
-            api_url_red_model: None,
-            api_key_blu_model: None,
-            api_key_grn_model: None,
-            api_key_red_model: None,
-            model_blu_model_override: None,
-            model_grn_model_override: None,
-            model_red_model_override: None,
-        }
+        let mut config = ClientConfig::default();
+        config.set_api_key("test_key".to_string());
+        config
     }
 
     #[test]

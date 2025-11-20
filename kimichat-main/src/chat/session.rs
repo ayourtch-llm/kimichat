@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::KimiChat;
-use kimichat_models::{ModelType, Message};
+use kimichat_models::{ModelColor, Message};
 use kimichat_logging::safe_truncate;
 
 /// Main chat loop - handles user messages, tool calls, and model interactions
@@ -33,8 +33,8 @@ pub(crate) async fn chat(
         const SCATTERED_REPEAT_THRESHOLD: usize = 6; // Warn if same call 6+ times in window
 
         // Initialize progress evaluator for all operations
-        let blu_model_url = crate::config::get_api_url(&chat.client_config, &ModelType::BluModel);
-        let blu_model_key = crate::config::get_api_key(&chat.client_config, &chat.api_key, &ModelType::BluModel);
+        let blu_model_url = crate::config::get_api_url(&chat.client_config, &ModelColor::BluModel);
+        let blu_model_key = crate::config::get_api_key(&chat.client_config, &chat.api_key, &ModelColor::BluModel);
         let mut progress_evaluator = Some(kimichat_agents::progress_evaluator::ProgressEvaluator::new(
             std::sync::Arc::new(kimichat_agents::GroqLlmClient::new(
                 blu_model_key,
@@ -76,8 +76,8 @@ pub(crate) async fn chat(
                             // Check if this should use the new streaming system
                             // The new system works with all model types now
                             let should_use_anthropic =
-                                (chat.client_config.api_url_blu_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
-                                (chat.client_config.api_url_grn_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false));
+                                (chat.client_config.get_api_url(ModelColor::BluModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
+                                (chat.client_config.get_api_url(ModelColor::GrnModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false));
 
                             if should_use_anthropic {
                                 // Use the new streaming implementation for Anthropic-compatible APIs
@@ -103,8 +103,8 @@ pub(crate) async fn chat(
                     // Check if this should use the new streaming system
                     // The new system works with all model types now
                     let should_use_anthropic =
-                        (chat.client_config.api_url_blu_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
-                        (chat.client_config.api_url_grn_model.as_ref().map(|u| u.contains("anthropic")).unwrap_or(false));
+                        (chat.client_config.get_api_url(ModelColor::BluModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false)) ||
+                        (chat.client_config.get_api_url(ModelColor::GrnModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false));
 
                     if should_use_anthropic {
                         // Use the new streaming implementation for Anthropic-compatible APIs

@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::KimiChat;
-use kimichat_models::{ModelType, Message, ChatRequest, ChatResponse};
+use kimichat_models::{ModelColor, Message, ChatRequest, ChatResponse};
 use kimichat_logging::{log_request_to_file, safe_truncate};
 
 /// Calculate the current conversation size in bytes by serializing to JSON
@@ -14,16 +14,16 @@ pub fn calculate_conversation_size(messages: &[Message]) -> usize {
 }
 
 /// Get maximum session size based on model type (different models have different context limits)
-pub fn get_max_session_size(model: &ModelType) -> usize {
+pub fn get_max_session_size(model: &ModelColor) -> usize {
     match model {
-        ModelType::GrnModel => 150_000,  // Conservative for Groq (~8K tokens)
-        ModelType::BluModel => 400_000,  // Moderate for Claude (~100K tokens)
-        ModelType::RedModel => 600_000,  // Larger for local models
+        ModelColor::GrnModel => 150_000,  // Conservative for Groq (~8K tokens)
+        ModelColor::BluModel => 400_000,  // Moderate for Claude (~100K tokens)
+        ModelColor::RedModel => 600_000,  // Larger for local models
     }
 }
 
 /// Determine if a session should be compacted based on its current size and model type
-pub fn should_compact_session(chat: &KimiChat, model: &ModelType) -> bool {
+pub fn should_compact_session(chat: &KimiChat, model: &ModelColor) -> bool {
     let conversation_size = calculate_conversation_size(&chat.messages);
     let max_size = get_max_session_size(model);
     
@@ -115,9 +115,9 @@ pub async fn intelligent_compaction(chat: &mut KimiChat, current_tool_iteration:
     
     // Use the "other" model for summarization
     let summary_model = match chat.current_model {
-        ModelType::BluModel => ModelType::GrnModel,
-        ModelType::GrnModel => ModelType::BluModel,
-        ModelType::RedModel => ModelType::BluModel,
+        ModelColor::BluModel => ModelColor::GrnModel,
+        ModelColor::GrnModel => ModelColor::BluModel,
+        ModelColor::RedModel => ModelColor::BluModel,
     };
     
     // Build summary request
@@ -180,9 +180,9 @@ pub async fn intelligent_compaction(chat: &mut KimiChat, current_tool_iteration:
     // Call API to get summary using the OTHER model
     let request = ChatRequest {
         model: summary_model.as_str(
-            chat.client_config.model_blu_model_override.as_deref(),
-            chat.client_config.model_grn_model_override.as_deref(),
-            chat.client_config.model_red_model_override.as_deref()
+            chat.client_config.get_model_override(ModelColor::BluModel).as_deref().map(|s| s.as_str()),
+            chat.client_config.get_model_override(ModelColor::GrnModel).as_deref().map(|s| s.as_str()),
+            chat.client_config.get_model_override(ModelColor::RedModel).as_deref().map(|s| s.as_str())
         ).to_string(),
         messages: summary_history,
         tools: vec![],
@@ -278,9 +278,9 @@ pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()
 
     // Use the "other" model for summarization
     let summary_model = match chat.current_model {
-        ModelType::BluModel => ModelType::GrnModel,
-        ModelType::GrnModel => ModelType::BluModel,
-        ModelType::RedModel => ModelType::BluModel, // Use BluModel for summarization when using RedModel
+        ModelColor::BluModel => ModelColor::GrnModel,
+        ModelColor::GrnModel => ModelColor::BluModel,
+        ModelColor::RedModel => ModelColor::BluModel, // Use BluModel for summarization when using RedModel
     };
 
     println!(
@@ -358,9 +358,9 @@ pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()
     // Call API to get summary using the OTHER model
     let request = ChatRequest {
         model: summary_model.as_str(
-            chat.client_config.model_blu_model_override.as_deref(),
-            chat.client_config.model_grn_model_override.as_deref(),
-            chat.client_config.model_red_model_override.as_deref()
+            chat.client_config.get_model_override(ModelColor::BluModel).as_deref().map(|s| s.as_str()),
+            chat.client_config.get_model_override(ModelColor::GrnModel).as_deref().map(|s| s.as_str()),
+            chat.client_config.get_model_override(ModelColor::RedModel).as_deref().map(|s| s.as_str())
         ).to_string(),
         messages: summary_history,
         tools: vec![],
@@ -484,9 +484,9 @@ pub(crate) async fn summarize_and_trim_history(chat: &mut KimiChat) -> Result<()
 
                 let decision_request = ChatRequest {
                     model: chat.current_model.as_str(
-                        chat.client_config.model_blu_model_override.as_deref(),
-                        chat.client_config.model_grn_model_override.as_deref(),
-                        chat.client_config.model_red_model_override.as_deref()
+                        chat.client_config.get_model_override(ModelColor::BluModel).as_deref().map(|s| s.as_str()),
+                        chat.client_config.get_model_override(ModelColor::GrnModel).as_deref().map(|s| s.as_str()),
+                        chat.client_config.get_model_override(ModelColor::RedModel).as_deref().map(|s| s.as_str())
                     ).to_string(),
                     messages: decision_prompt,
                     tools: vec![],

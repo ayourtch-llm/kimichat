@@ -2,7 +2,7 @@
 mod tests {
     use crate::chat::{calculate_conversation_size, get_max_session_size, should_compact_session, intelligent_compaction};
     use crate::{KimiChat, ClientConfig};
-    use kimichat_models::{Message, ModelType, ToolCall, FunctionCall};
+    use kimichat_models::{Message, ModelColor, ToolCall, FunctionCall};
     use std::sync::Arc;
     use tokio::sync::Mutex;
     use kimichat_terminal::TerminalManager;
@@ -21,27 +21,13 @@ mod tests {
             work_dir: work_dir.clone(),
             client: reqwest::Client::new(),
             messages: Vec::new(),
-            current_model: ModelType::GrnModel,
+            current_model: ModelColor::GrnModel,
             total_tokens_used: 0,
             logger: None,
             tool_registry: ToolRegistry::new(),
             agent_coordinator: None,
             use_agents: false,
-            client_config: ClientConfig {
-                api_key: "test-key".to_string(),
-                backend_blu_model: None,
-                backend_grn_model: None,
-                backend_red_model: None,
-                api_url_blu_model: None,
-                api_url_grn_model: None,
-                api_url_red_model: None,
-                api_key_blu_model: None,
-                api_key_grn_model: None,
-                api_key_red_model: None,
-                model_blu_model_override: None,
-                model_grn_model_override: None,
-                model_red_model_override: None,
-            },
+            client_config: ClientConfig::new(),
             policy_manager: PolicyManager::new(),
             terminal_manager: Arc::new(Mutex::new(TerminalManager::new(work_dir))),
             skill_registry: None,
@@ -132,9 +118,9 @@ mod tests {
 
     #[test]
     fn test_get_max_session_size_by_model() {
-        assert_eq!(get_max_session_size(&ModelType::GrnModel), 150_000);
-        assert_eq!(get_max_session_size(&ModelType::BluModel), 400_000);
-        assert_eq!(get_max_session_size(&ModelType::RedModel), 600_000);
+        assert_eq!(get_max_session_size(&ModelColor::GrnModel), 150_000);
+        assert_eq!(get_max_session_size(&ModelColor::BluModel), 400_000);
+        assert_eq!(get_max_session_size(&ModelColor::RedModel), 600_000);
     }
 
     #[test]
@@ -142,7 +128,7 @@ mod tests {
         let chat = create_test_kimichat();
         
         // Small conversation should not need compaction
-        assert!(!should_compact_session(&chat, &ModelType::GrnModel));
+        assert!(!should_compact_session(&chat, &ModelColor::GrnModel));
     }
 
     #[test]
@@ -158,10 +144,10 @@ mod tests {
         assert!(size > 150_000, "Conversation should be above threshold");
         
         // Should need compaction for GrnModel (150KB threshold)
-        assert!(should_compact_session(&chat, &ModelType::GrnModel));
+        assert!(should_compact_session(&chat, &ModelColor::GrnModel));
         
         // But not for RedModel (600KB threshold)
-        assert!(!should_compact_session(&chat, &ModelType::RedModel));
+        assert!(!should_compact_session(&chat, &ModelColor::RedModel));
     }
 
     #[tokio::test]

@@ -2,7 +2,7 @@ use std::env;
 use std::sync::Arc;
 
 use crate::config::{ClientConfig, normalize_api_url};
-use kimichat_models::ModelType;
+use kimichat_models::ModelColor;
 use kimichat_llm_api::{
     LlmClient, BackendType, GROQ_API_URL,
     client::{anthropic::AnthropicLlmClient, groq::GroqLlmClient, llama_cpp::LlamaCppClient},
@@ -25,60 +25,23 @@ pub fn get_system_prompt() -> String {
 }
 
 /// Get the API URL to use based on the current model and client configuration
-pub fn get_api_url(client_config: &ClientConfig, model: &ModelType) -> String {
-    let url = match model {
-        ModelType::BluModel => {
-            client_config
-                .api_url_blu_model
-                .as_ref()
-                .map(|s| s.clone())
-                .unwrap_or_else(|| GROQ_API_URL.to_string())
-        }
-        ModelType::GrnModel => {
-            client_config
-                .api_url_grn_model
-                .as_ref()
-                .map(|s| s.clone())
-                .unwrap_or_else(|| GROQ_API_URL.to_string())
-        }
-        ModelType::RedModel => {
-            client_config
-                .api_url_red_model
-                .as_ref()
-                .map(|s| s.clone())
-                .unwrap_or_else(|| GROQ_API_URL.to_string())
-        }
-    };
+pub fn get_api_url(client_config: &ClientConfig, model: &ModelColor) -> String {
+    let url = client_config.get_api_url(*model)
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions");
 
     // Normalize the URL to ensure it has the correct path
-    normalize_api_url(&url)
+    normalize_api_url(url).to_string()
 }
 
 /// Get the appropriate API key for a given model based on configuration
-pub fn get_api_key(client_config: &ClientConfig, api_key: &str, model: &ModelType) -> String {
-    match model {
-        ModelType::BluModel => {
-            client_config
-                .api_key_blu_model
-                .as_ref()
-                .map(|s| s.clone())
-                .unwrap_or_else(|| api_key.to_string())
-        }
-        ModelType::GrnModel => {
-            client_config
-                .api_key_grn_model
-                .as_ref()
-                .map(|s| s.clone())
-                .unwrap_or_else(|| api_key.to_string())
-        }
-        ModelType::RedModel => {
-            client_config
-                .api_key_red_model
-                .as_ref()
-                .map(|s| s.clone())
-                .unwrap_or_else(|| api_key.to_string())
-        }
-    }
+pub fn get_api_key(client_config: &ClientConfig, api_key: &str, model: &ModelColor) -> String {
+    client_config.get_api_key(*model)
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or_else(|| api_key)
+        .to_string()
 }
 
 /// Read model configuration from KIMICHAT_* environment variables
@@ -97,41 +60,41 @@ pub fn get_model_config_from_env(model_name: &str) -> (Option<BackendType>, Opti
     (backend, url, key, model)
 }
 
-/// Create an LLM client based on a ModelType enum value
-/// This is the highest-level helper that maps ModelType to the appropriate client
+/// Create an LLM client based on a ModelColor enum value
+/// This is the highest-level helper that maps ModelColor to the appropriate client
 pub fn create_client_for_model_type(
-    model: &ModelType,
+    model: &ModelColor,
     client_config: &ClientConfig,
     default_api_key: &str,
 ) -> Arc<dyn LlmClient> {
     match model {
-        ModelType::BluModel => {
+        ModelColor::BluModel => {
             create_model_client(
                 "blu",
-                client_config.backend_blu_model.clone(),
-                client_config.api_url_blu_model.clone(),
-                client_config.api_key_blu_model.clone(),
-                client_config.model_blu_model_override.clone(),
+                client_config.get_backend(ModelColor::BluModel).cloned(),
+                client_config.get_api_url(ModelColor::BluModel).cloned(),
+                client_config.get_api_key(ModelColor::BluModel).cloned(),
+                client_config.get_model_override(ModelColor::BluModel).cloned(),
                 default_api_key,
             )
         }
-        ModelType::GrnModel => {
+        ModelColor::GrnModel => {
             create_model_client(
                 "grn",
-                client_config.backend_grn_model.clone(),
-                client_config.api_url_grn_model.clone(),
-                client_config.api_key_grn_model.clone(),
-                client_config.model_grn_model_override.clone(),
+                client_config.get_backend(ModelColor::GrnModel).cloned(),
+                client_config.get_api_url(ModelColor::GrnModel).cloned(),
+                client_config.get_api_key(ModelColor::GrnModel).cloned(),
+                client_config.get_model_override(ModelColor::GrnModel).cloned(),
                 default_api_key,
             )
         }
-        ModelType::RedModel => {
+        ModelColor::RedModel => {
             create_model_client(
                 "red",
-                client_config.backend_red_model.clone(),
-                client_config.api_url_red_model.clone(),
-                client_config.api_key_red_model.clone(),
-                client_config.model_red_model_override.clone(),
+                client_config.get_backend(ModelColor::RedModel).cloned(),
+                client_config.get_api_url(ModelColor::RedModel).cloned(),
+                client_config.get_api_key(ModelColor::RedModel).cloned(),
+                client_config.get_model_override(ModelColor::RedModel).cloned(),
                 default_api_key,
             )
         }
@@ -155,10 +118,10 @@ pub fn create_model_client(
         override_str.clone()
     } else {
         match model_name {
-            "blu" => ModelType::BluModel.as_str_default(),
-            "grn" => ModelType::GrnModel.as_str_default(),
-            "red" => ModelType::RedModel.as_str_default(),
-            _ => ModelType::GrnModel.as_str_default(),
+            "blu" => ModelColor::BluModel.default_model(),
+            "grn" => ModelColor::GrnModel.default_model(),
+            "red" => ModelColor::RedModel.default_model(),
+            _ => ModelColor::GrnModel.default_model(),
         }
     };
 

@@ -130,7 +130,7 @@ async fn handle_websocket(socket: WebSocket, state: AppState, session_id: Sessio
         session_id,
         session_type: session.session_type.as_str().to_string(),
         created_at: session.created_at.to_rfc3339(),
-        current_model,
+        current_model: current_model.to_string(),
         history,
     };
 
@@ -609,8 +609,8 @@ async fn handle_switch_model(
         Ok(_) => {
             let new_model = kimichat.current_model.display_name();
             let msg = ServerMessage::ModelSwitched {
-                old_model,
-                new_model,
+                old_model: old_model.to_string(),
+                new_model: new_model.to_string(),
                 reason,
             };
             session.broadcast(msg).await;

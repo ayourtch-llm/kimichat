@@ -32,7 +32,7 @@ use config::{ClientConfig, GROQ_API_URL, initialize_tool_registry, initialize_ag
 use chat::{save_state, load_state};
 use app::{setup_from_cli, run_task_mode, run_subagent_mode, run_repl_mode};
 use kimichat_models::{
-    ModelType, Message, ToolCall, FunctionCall,
+    ModelColor, Message, ToolCall, FunctionCall,
     SwitchModelArgs,
     Tool, FunctionDef,
     ChatResponse,
@@ -47,7 +47,7 @@ pub(crate) struct KimiChat {
     pub(crate) work_dir: PathBuf,
     pub(crate) client: reqwest::Client,
     pub(crate) messages: Vec<Message>,
-    pub(crate) current_model: ModelType,
+    pub(crate) current_model: ModelColor,
     pub(crate) total_tokens_used: usize,
     pub(crate) logger: Option<ConversationLogger>,
     pub(crate) tool_registry: ToolRegistry,
@@ -78,18 +78,10 @@ impl KimiChat {
     fn new(api_key: String, work_dir: PathBuf) -> Self {
         let config = ClientConfig {
             api_key: api_key.clone(),
-            backend_blu_model: None,
-            backend_grn_model: None,
-            backend_red_model: None,
-            api_url_blu_model: None,
-            api_url_grn_model: None,
-            api_url_red_model: None,
-            api_key_blu_model: None,
-            api_key_grn_model: None,
-            api_key_red_model: None,
-            model_blu_model_override: None,
-            model_grn_model_override: None,
-            model_red_model_override: None,
+            backends: [None, None, None],
+            api_urls: [None, None, None],
+            api_keys: [None, None, None],
+            model_overrides: [None, None, None],
         };
         let policy_manager = PolicyManager::new();
         Self::new_with_config(
@@ -106,18 +98,10 @@ impl KimiChat {
     fn new_with_agents(api_key: String, work_dir: PathBuf, use_agents: bool) -> Self {
         let config = ClientConfig {
             api_key: api_key.clone(),
-            backend_blu_model: None,
-            backend_grn_model: None,
-            backend_red_model: None,
-            api_url_blu_model: None,
-            api_url_grn_model: None,
-            api_url_red_model: None,
-            api_key_blu_model: None,
-            api_key_grn_model: None,
-            api_key_red_model: None,
-            model_blu_model_override: None,
-            model_grn_model_override: None,
-            model_red_model_override: None,
+            backends: [None, None, None],
+            api_urls: [None, None, None],
+            api_keys: [None, None, None],
+            model_overrides: [None, None, None],
         };
         let policy_manager = PolicyManager::new();
         Self::new_with_config(
@@ -195,10 +179,10 @@ impl KimiChat {
         // Determine initial model based on overrides or defaults
         // Default to GPT-OSS for cost efficiency - it's significantly cheaper than Kimi
         // while still providing good performance for most tasks
-        let initial_model = if let Some(ref _override_model) = client_config.model_grn_model_override {
-            ModelType::GrnModel
+        let initial_model = if client_config.get_model_override(ModelColor::GrnModel).is_some() {
+            ModelColor::GrnModel
         } else {
-            ModelType::GrnModel
+            ModelColor::GrnModel
         };
 
         let mut chat = Self {
@@ -276,9 +260,9 @@ impl KimiChat {
             let llm_client = std::sync::Arc::new(GroqLlmClient::new(
                 api_key,
                 self.current_model.as_str(
-                    self.client_config.model_blu_model_override.as_deref(),
-                    self.client_config.model_grn_model_override.as_deref(),
-                    self.client_config.model_red_model_override.as_deref()
+                    self.client_config.get_model_override(ModelColor::BluModel).as_deref().map(|x| x.as_str()),
+                    self.client_config.get_model_override(ModelColor::GrnModel).as_deref().map(|x| x.as_str()),
+                    self.client_config.get_model_override(ModelColor::RedModel).as_deref().map(|x| x.as_str())
                 ).to_string(),
                 api_url,
                 "process_with_agents".to_string()
@@ -361,11 +345,11 @@ impl KimiChat {
 
     fn switch_model(&mut self, model_str: &str, reason: &str) -> Result<String> {
         let new_model = match model_str.to_lowercase().as_str() {
-            "blu_model" | "blu-model" | "blumodel" => ModelType::BluModel,
-            "grn_model" | "grn-model" | "grnmodel" => ModelType::GrnModel,
-            "red_model" | "red-model" | "redmodel" => ModelType::RedModel,
+            "blu_model" | "blu-model" | "blumodel" => ModelColor::BluModel,
+            "grn_model" | "grn-model" | "grnmodel" => ModelColor::GrnModel,
+            "red_model" | "red-model" | "redmodel" => ModelColor::RedModel,
             // For backward compatibility, map Anthropic references to BluModel
-            "anthropic" | "claude" | "anthropic_model" | "anthropic-model" => ModelType::BluModel,
+            "anthropic" | "claude" | "anthropic_model" | "anthropic-model" => ModelColor::BluModel,
             _ => anyhow::bail!("Unknown model: {}. Available: 'blu_model', 'grn_model', 'red_model'", model_str),
         };
 

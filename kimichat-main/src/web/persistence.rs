@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::chat::state::ChatState;
 use crate::web::session_manager::SessionId;
-use kimichat_models::ModelType;
+use kimichat_models::ModelColor;
 
 /// Persistent session data stored on disk
 #[derive(Debug, Serialize, Deserialize)]

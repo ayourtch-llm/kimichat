@@ -8,7 +8,7 @@ use kimichat_agents::{
 use kimichat_toolcore::ToolRegistry;
 use kimichat_policy::PolicyManager;
 use kimichat_tools::*;
-use kimichat_models::ModelType;
+use kimichat_models::ModelColor;
 
 pub mod helpers;
 pub use helpers::{get_system_prompt, get_api_url, get_api_key, create_model_client, create_client_for_model_type};
@@ -22,31 +22,70 @@ pub struct ClientConfig {
     /// API key for authentication (Groq default)
     pub api_key: String,
 
-    /// Explicit backend type for blu_model
-    pub backend_blu_model: Option<BackendType>,
-    /// Explicit backend type for grn_model
-    pub backend_grn_model: Option<BackendType>,
-    /// Explicit backend type for red_model
-    pub backend_red_model: Option<BackendType>,
+    /// Backend types for each model color [blu, grn, red]
+    pub backends: [Option<BackendType>; ModelColor::COUNT],
+    
+    /// API URLs for each model color [blu, grn, red] - if Some, uses custom backend; if None, uses Groq
+    pub api_urls: [Option<String>; ModelColor::COUNT],
+    
+    /// API keys for each model color [blu, grn, red] - if Some, uses this instead of default api_key
+    pub api_keys: [Option<String>; ModelColor::COUNT],
+    
+    /// Model name overrides for each model color [blu, grn, red]
+    pub model_overrides: [Option<String>; ModelColor::COUNT],
+}
 
-    /// API URL for 'blu_model' - if Some, uses custom backend; if None, uses Groq
-    pub api_url_blu_model: Option<String>,
-    /// API URL for 'grn_model' - if Some, uses custom backend; if None, uses Groq
-    pub api_url_grn_model: Option<String>,
-    /// API URL for 'red_model' - if Some, uses custom backend; if None, uses Groq
-    pub api_url_red_model: Option<String>,
-    /// API key for 'blu_model' - if Some, uses this instead of default api_key
-    pub api_key_blu_model: Option<String>,
-    /// API key for 'grn_model' - if Some, uses this instead of default api_key
-    pub api_key_grn_model: Option<String>,
-    /// API key for 'red_model' - if Some, uses this instead of default api_key
-    pub api_key_red_model: Option<String>,
-    /// Override for 'blu_model' model name
-    pub model_blu_model_override: Option<String>,
-    /// Override for 'grn_model' model name
-    pub model_grn_model_override: Option<String>,
-    /// Override for 'red_model' model name
-    pub model_red_model_override: Option<String>,
+impl ClientConfig {
+    /// Create a new ClientConfig with all fields set to None
+    pub fn new() -> Self {
+        Self {
+            api_key: String::new(),
+            backends: [const { None }; ModelColor::COUNT],
+            api_urls: [const { None }; ModelColor::COUNT],
+            api_keys: [const { None }; ModelColor::COUNT],
+            model_overrides: [const { None }; ModelColor::COUNT],
+        }
+    }
+    
+    /// Get backend for a specific model color
+    pub fn get_backend(&self, color: ModelColor) -> Option<&BackendType> {
+        self.backends[color as usize].as_ref()
+    }
+    
+    /// Set backend for a specific model color
+    pub fn set_backend(&mut self, color: ModelColor, backend: Option<BackendType>) {
+        self.backends[color as usize] = backend;
+    }
+    
+    /// Get API URL for a specific model color
+    pub fn get_api_url(&self, color: ModelColor) -> Option<&String> {
+        self.api_urls[color as usize].as_ref()
+    }
+    
+    /// Set API URL for a specific model color
+    pub fn set_api_url(&mut self, color: ModelColor, url: Option<String>) {
+        self.api_urls[color as usize] = url;
+    }
+    
+    /// Get API key for a specific model color
+    pub fn get_api_key(&self, color: ModelColor) -> Option<&String> {
+        self.api_keys[color as usize].as_ref()
+    }
+    
+    /// Set API key for a specific model color
+    pub fn set_api_key(&mut self, color: ModelColor, key: Option<String>) {
+        self.api_keys[color as usize] = key;
+    }
+    
+    /// Get model override for a specific model color
+    pub fn get_model_override(&self, color: ModelColor) -> Option<&String> {
+        self.model_overrides[color as usize].as_ref()
+    }
+    
+    /// Set model override for a specific model color
+    pub fn set_model_override(&mut self, color: ModelColor, model: Option<String>) {
+        self.model_overrides[color as usize] = model;
+    }
 }
 
 /// Initialize the tool registry with all available tools
@@ -112,20 +151,20 @@ pub fn initialize_agent_system(client_config: &ClientConfig, tool_registry: &Too
     let mut agent_factory = AgentFactory::new(tool_registry_arc, policy_manager.clone());
 
     // Determine model names with overrides
-    let blu_model = ModelType::BluModel.as_str(
-        client_config.model_blu_model_override.as_deref(),
-        client_config.model_grn_model_override.as_deref(),
-        client_config.model_red_model_override.as_deref()
+    let blu_model = ModelColor::BluModel.as_str(
+        client_config.get_model_override(ModelColor::BluModel).map(|s| s.as_str()),
+        client_config.get_model_override(ModelColor::GrnModel).map(|s| s.as_str()),
+        client_config.get_model_override(ModelColor::RedModel).map(|s| s.as_str())
     );
-    let grn_model = ModelType::GrnModel.as_str(
-        client_config.model_blu_model_override.as_deref(),
-        client_config.model_grn_model_override.as_deref(),
-        client_config.model_red_model_override.as_deref()
+    let grn_model = ModelColor::GrnModel.as_str(
+        client_config.get_model_override(ModelColor::BluModel).map(|s| s.as_str()),
+        client_config.get_model_override(ModelColor::GrnModel).map(|s| s.as_str()),
+        client_config.get_model_override(ModelColor::RedModel).map(|s| s.as_str())
     );
-    let red_model = ModelType::RedModel.as_str(
-        client_config.model_blu_model_override.as_deref(),
-        client_config.model_grn_model_override.as_deref(),
-        client_config.model_red_model_override.as_deref()
+    let red_model = ModelColor::RedModel.as_str(
+        client_config.get_model_override(ModelColor::BluModel).map(|s| s.as_str()),
+        client_config.get_model_override(ModelColor::GrnModel).map(|s| s.as_str()),
+        client_config.get_model_override(ModelColor::RedModel).map(|s| s.as_str())
     );
 
     // Register LLM clients based on per-model configuration
@@ -133,27 +172,27 @@ pub fn initialize_agent_system(client_config: &ClientConfig, tool_registry: &Too
 
     let blu_model_client = create_model_client(
         "blu",
-        client_config.backend_blu_model.clone(),
-        client_config.api_url_blu_model.clone(),
-        client_config.api_key_blu_model.clone(),
+        client_config.get_backend(ModelColor::BluModel).cloned(),
+        client_config.get_api_url(ModelColor::BluModel).cloned(),
+        client_config.get_api_key(ModelColor::BluModel).cloned(),
         Some(blu_model.clone()),
         &client_config.api_key,
     );
 
     let grn_model_client = create_model_client(
         "grn",
-        client_config.backend_grn_model.clone(),
-        client_config.api_url_grn_model.clone(),
-        client_config.api_key_grn_model.clone(),
+        client_config.get_backend(ModelColor::GrnModel).cloned(),
+        client_config.get_api_url(ModelColor::GrnModel).cloned(),
+        client_config.get_api_key(ModelColor::GrnModel).cloned(),
         Some(grn_model.clone()),
         &client_config.api_key,
     );
 
     let red_model_client = create_model_client(
         "red",
-        client_config.backend_red_model.clone(),
-        client_config.api_url_red_model.clone(),
-        client_config.api_key_red_model.clone(),
+        client_config.get_backend(ModelColor::RedModel).cloned(),
+        client_config.get_api_url(ModelColor::RedModel).cloned(),
+        client_config.get_api_key(ModelColor::RedModel).cloned(),
         Some(red_model.clone()),
         &client_config.api_key,
     );

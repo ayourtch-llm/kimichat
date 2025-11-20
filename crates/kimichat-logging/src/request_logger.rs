@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use kimichat_models::{ChatRequest, ModelType};
+use kimichat_models::{ChatRequest, ModelColor};
 use crate::{safe_truncate, get_logs_dir};
 
 /// Log HTTP request details for debugging (console output)
@@ -51,7 +51,7 @@ pub fn log_request(url: &str, request: &ChatRequest, api_key: &str, verbose: boo
 }
 
 /// Log HTTP request to file for persistent debugging
-pub fn log_request_to_file(url: &str, request: &ChatRequest, model: &ModelType, api_key: &str) -> Result<()> {
+pub fn log_request_to_file(url: &str, request: &ChatRequest, model: &ModelColor, api_key: &str) -> Result<()> {
     // Use shared logs directory from utility function
     let logs_dir = get_logs_dir()?;
 
@@ -118,7 +118,7 @@ pub fn log_response_to_file(
     headers: &reqwest::header::HeaderMap,
     body: &str,
     request_timestamp: u64,
-    model: &ModelType,
+    model: &ModelColor,
 ) -> Result<()> {
     // Use shared logs directory from utility function
     let logs_dir = get_logs_dir()?;
@@ -191,7 +191,7 @@ pub fn log_response_to_file(
 pub fn log_raw_response_to_file(
     raw_response: &str,
     request_timestamp: u64,
-    model: &ModelType,
+    model: &ModelColor,
 ) -> Result<()> {
     // Use shared logs directory from utility function
     let logs_dir = get_logs_dir()?;

@@ -158,7 +158,7 @@ impl Session {
             last_activity: last_activity.to_rfc3339(),
             active_clients: clients.len(),
             message_count: kimichat.messages.len(),
-            current_model: kimichat.current_model.display_name(),
+            current_model: kimichat.current_model.display_name().to_string(),
             attachable: self.session_type == SessionType::Tui || self.session_type == SessionType::Shared,
         }
     }
@@ -242,7 +242,7 @@ impl SessionManager {
 
         // Determine which model to use
         let model_str = config.model.as_deref().unwrap_or("grn_model");
-        let model = kimichat_models::ModelType::from_str(model_str)
+        let model = kimichat_models::ModelColor::from_str(model_str)
             .map_err(|e| anyhow::anyhow!("Invalid model '{}': {}", model_str, e))?;
 
         // Create KimiChat instance
