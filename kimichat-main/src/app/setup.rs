@@ -37,7 +37,7 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
         .or_else(|| env::var("ANTHROPIC_BASE_URL_BLU").ok())
         .or_else(|| env::var("ANTHROPIC_BASE_URL").ok());
 
-    let api_key_blu_model = cli.blu_key.clone()
+    let mut api_key_blu_model = cli.blu_key.clone()
         .or(blu_key_env)
         .or_else(|| env::var("ANTHROPIC_AUTH_TOKEN_BLU").ok())
         .or_else(|| env::var("ANTHROPIC_AUTH_TOKEN").ok());
@@ -53,7 +53,7 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
         .or_else(|| env::var("ANTHROPIC_BASE_URL_GRN").ok())
         .or_else(|| env::var("ANTHROPIC_BASE_URL").ok());
 
-    let api_key_grn_model = cli.grn_key.clone()
+    let mut api_key_grn_model = cli.grn_key.clone()
         .or(grn_key_env)
         .or_else(|| env::var("ANTHROPIC_AUTH_TOKEN_GRN").ok())
         .or_else(|| env::var("ANTHROPIC_AUTH_TOKEN").ok());
@@ -69,7 +69,7 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
         .or_else(|| env::var("ANTHROPIC_BASE_URL_RED").ok())
         .or_else(|| env::var("ANTHROPIC_BASE_URL").ok());
 
-    let api_key_red_model = cli.red_key.clone()
+    let mut api_key_red_model = cli.red_key.clone()
         .or(red_key_env)
         .or_else(|| env::var("ANTHROPIC_AUTH_TOKEN_RED").ok())
         .or_else(|| env::var("ANTHROPIC_AUTH_TOKEN").ok());
@@ -153,13 +153,44 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
     let (mut api_url_blu_model_final, mut api_url_grn_model_final, mut api_url_red_model_final) = 
         (api_url_blu_model, api_url_grn_model, api_url_red_model);
 
-    if let Some(model_config) = &cli.model {
+            if let Some(model_config) = &cli.model {
         // Check if this is the model@backend(url) format
         if model_config.contains('@') {
             let (parsed_model, parsed_backend, parsed_url) = parse_model_attings(model_config);
             
             eprintln!("{} Parsed model configuration: model='{}', backend={:?}, url={:?}", 
                      "🔧".cyan(), parsed_model, parsed_backend, parsed_url);
+            
+              // When backend changes via model@backend syntax, we need to re-resolve API keys
+            // to ensure backend-appropriate keys are used instead of the original per-model keys
+            let resolve_api_key_for_backend = |model_name: &str, backend: Option<BackendType>, original_key: Option<String>| -> Option<String> {
+                // If we have an explicit backend, prefer backend-specific keys
+                // IMPORTANT: Don't fall back to original_key when backend changes, because it's likely for the wrong backend
+                if let Some(BackendType::Anthropic) = backend {
+                    // For Anthropic backend, only use Anthropic keys
+                    env::var(format!("ANTHROPIC_AUTH_TOKEN_{}", model_name.to_uppercase()))
+                        .ok()
+                        .or_else(|| env::var("ANTHROPIC_AUTH_TOKEN").ok())
+                        // Note: Removed .or(original_key) to prevent using wrong backend keys
+                } else if let Some(BackendType::OpenAI) = backend {
+                    // For OpenAI backend, only use OpenAI keys
+                    env::var(format!("OPENAI_API_KEY_{}", model_name.to_uppercase()))
+                        .ok()
+                        .or_else(|| env::var("OPENAI_API_KEY").ok())
+                        // Note: Removed .or(original_key) to prevent using wrong backend keys
+                } else {
+                    // For Groq/Llama backends, only use Groq keys or original per-model key if no backend change
+                    // If no explicit backend was specified, use the original key
+                    if backend.is_none() {
+                        original_key.or_else(|| env::var(format!("GROQ_API_KEY_{}", model_name.to_uppercase())).ok())
+                             .or_else(|| env::var("GROQ_API_KEY").ok())
+                    } else {
+                        // Backend changed to Groq/Llama, only use Groq keys
+                        env::var(format!("GROQ_API_KEY_{}", model_name.to_uppercase())).ok()
+                             .or_else(|| env::var("GROQ_API_KEY").ok())
+                    }
+                }
+            };
             
             // Apply the parsed configuration only to models that don't have specific configurations
             // This respects the precedence: specific flags > global --model > defaults
@@ -178,6 +209,9 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
                 if let Some(ref url) = final_url {
                     api_url_blu_model_final = Some(url.clone());
                 }
+                
+                // Fix: Re-resolve API key based on the new backend
+                api_key_blu_model = resolve_api_key_for_backend("blu", parsed_backend.clone(), api_key_blu_model);
             }
             
             if cli.model_grn_model.is_none() && grn_model_env.is_none() {
@@ -195,6 +229,9 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
                 if let Some(ref url) = final_url {
                     api_url_grn_model_final = Some(url.clone());
                 }
+                
+                // Fix: Re-resolve API key based on the new backend
+                api_key_grn_model = resolve_api_key_for_backend("grn", parsed_backend.clone(), api_key_grn_model);
             }
             
             if cli.model_red_model.is_none() && red_model_env.is_none() {
@@ -212,9 +249,22 @@ pub fn setup_from_cli(cli: &Cli) -> Result<AppConfig> {
                 if let Some(ref url) = final_url {
                     api_url_red_model_final = Some(url.clone());
                 }
+                
+                // Fix: Re-resolve API key based on the new backend
+                api_key_red_model = resolve_api_key_for_backend("red", parsed_backend.clone(), api_key_red_model);
             }
         }
     }
+
+    // Debug output to understand what's happening with model overrides
+    eprintln!("{} DEBUG: Final model overrides before client config:", "🔍".yellow());
+    eprintln!("  blu_model_override_final: {:?}", model_blu_override_final);
+    eprintln!("  grn_model_override_final: {:?}", model_grn_override_final);
+    eprintln!("  red_model_override_final: {:?}", model_red_override_final);
+    eprintln!("  CLI model_blu_model: {:?}", cli.model_blu_model);
+    eprintln!("  CLI model_grn_model: {:?}", cli.model_grn_model);
+    eprintln!("  CLI model_red_model: {:?}", cli.model_red_model);
+    eprintln!("  CLI global model: {:?}", cli.model);
 
     // API key is only required if at least one model uses Groq (no API URL specified and no per-model key)
     let needs_groq_key = (api_url_blu_model_final.is_none() && api_key_blu_model.is_none())

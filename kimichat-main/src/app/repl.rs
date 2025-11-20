@@ -113,6 +113,41 @@ pub async fn run_repl_mode(
         (backend_name.to_string(), url.to_string(), model_name)
     };
 
+    // Function to get API key preview for a model based on its resolved configuration
+    let get_api_key_preview = |model_type: ModelType, _backend: &str| {
+        let key_preview = match model_type {
+            ModelType::BluModel => {
+                if let Some(key) = &chat.client_config.api_key_blu_model {
+                    Some(format!("{}***", &key[..key.len().min(3)]))
+                } else if !chat.client_config.api_key.is_empty() {
+                    Some(format!("{}***", &chat.client_config.api_key[..chat.client_config.api_key.len().min(3)]))
+                } else {
+                    None
+                }
+            }
+            ModelType::GrnModel => {
+                if let Some(key) = &chat.client_config.api_key_grn_model {
+                    Some(format!("{}***", &key[..key.len().min(3)]))
+                } else if !chat.client_config.api_key.is_empty() {
+                    Some(format!("{}***", &chat.client_config.api_key[..chat.client_config.api_key.len().min(3)]))
+                } else {
+                    None
+                }
+            }
+            ModelType::RedModel => {
+                if let Some(key) = &chat.client_config.api_key_red_model {
+                    Some(format!("{}***", &key[..key.len().min(3)]))
+                } else if !chat.client_config.api_key.is_empty() {
+                    Some(format!("{}***", &chat.client_config.api_key[..chat.client_config.api_key.len().min(3)]))
+                } else {
+                    None
+                }
+            }
+        };
+        
+        key_preview.map(|k| k.green())
+    };
+
     // BluModel details
     let (blu_backend, blu_url, blu_model) = get_backend_info(ModelType::BluModel);
     let blu_icon = match blu_backend.as_str() {
@@ -123,6 +158,9 @@ pub async fn run_repl_mode(
     };
     println!("{} {} ({})", "BluModel:".bright_blue().bold(), blu_model, blu_backend.bright_black());
     println!("   {} {}", "API:".bright_black(), blu_url.bright_black());
+    if let Some(key_preview) = get_api_key_preview(ModelType::BluModel, &blu_backend) {
+        println!("   {} {}", "Key:".bright_black(), key_preview);
+    }
 
     // GrnModel details
     let (grn_backend, grn_url, grn_model) = get_backend_info(ModelType::GrnModel);
@@ -133,6 +171,9 @@ pub async fn run_repl_mode(
         _ => "⚙️",
     };
     println!("{} {} ({}) ⭐", "GrnModel:".bright_green().bold(), grn_model, grn_backend.bright_black());
+    if let Some(key_preview) = get_api_key_preview(ModelType::GrnModel, &grn_backend) {
+        println!("   {} {}", "Key:".bright_black(), key_preview);
+    }
 
     // RedModel details
     let (red_backend, red_url, red_model) = get_backend_info(ModelType::RedModel);
@@ -144,37 +185,9 @@ pub async fn run_repl_mode(
     };
     println!("{} {} ({})", "RedModel:".bright_red().bold(), red_model, red_backend.bright_black());
     println!("   {} {}", "API:".bright_black(), red_url.bright_black());
-
-    // Show API key configuration (without exposing actual keys)
-    println!();
-    println!("{}", "🔑 API Key Configuration:".bright_yellow().bold());
-    let show_key_status = |model_name: &str, has_specific_key: bool, env_var: &str| {
-        if has_specific_key {
-            println!("   {}: {} (configured)", model_name.bright_white(), "✓ Specific key".green());
-        } else if env::var(env_var).is_ok() {
-            println!("   {}: {} (from {})", model_name.bright_white(), "✓".green(), env_var.bright_black());
-        } else if env::var("ANTHROPIC_AUTH_TOKEN").is_ok() || env::var("GROQ_API_KEY").is_ok() {
-            println!("   {}: {} (using global key)", model_name.bright_white(), "✓".green());
-        } else {
-            println!("   {}: {} (no key found)", model_name.bright_white(), "⚠️".yellow());
-        }
-    };
-
-    show_key_status(
-        "BluModel",
-        chat.client_config.api_key_blu_model.is_some(),
-        "ANTHROPIC_AUTH_TOKEN_BLU"
-    );
-    show_key_status(
-        "GrnModel",
-        chat.client_config.api_key_grn_model.is_some(),
-        "ANTHROPIC_AUTH_TOKEN_GRN"
-    );
-    show_key_status(
-        "RedModel",
-        chat.client_config.api_key_red_model.is_some(),
-        "ANTHROPIC_AUTH_TOKEN_RED"
-    );
+    if let Some(key_preview) = get_api_key_preview(ModelType::RedModel, &red_backend) {
+        println!("   {} {}", "Key:".bright_black(), key_preview);
+    }
 
     println!("{}", "═".repeat(80).bright_black());
 
