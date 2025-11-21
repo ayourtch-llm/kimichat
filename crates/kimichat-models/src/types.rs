@@ -41,7 +41,7 @@ pub enum ModelColor {
 }
 
 /// Model provider configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ModelProvider {
     /// Model name (e.g., "moonshotai/kimi-k2-instruct-0905")
     pub model_name: String,
@@ -51,6 +51,23 @@ pub struct ModelProvider {
     pub api_url: Option<String>,
     /// API key for the provider
     pub api_key: Option<String>,
+}
+
+impl std::fmt::Debug for ModelProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let masked_key = match &self.api_key {
+            Some(key) if key.len() > 3 => format!("{}***", &key[..3]),
+            Some(key) => format!("{}***", &key),
+            None => "None".to_string(),
+        };
+        
+        f.debug_struct("ModelProvider")
+            .field("model_name", &self.model_name)
+            .field("backend", &self.backend)
+            .field("api_url", &self.api_url)
+            .field("api_key", &masked_key)
+            .finish()
+    }
 }
 
 impl ModelProvider {

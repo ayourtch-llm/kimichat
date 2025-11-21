@@ -55,69 +55,11 @@ pub async fn run_repl_mode(
     };
     println!("{} {}", "📍 Current:".bright_green().bold(), current_model_display.bright_white());
 
-    // Function to get backend info
-    let get_backend_info = |model_color: ModelColor| {
-        let (backend_name, url, model_name) = match model_color {
-            ModelColor::BluModel => {
-                let backend = if chat.client_config.get_api_url(ModelColor::BluModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
-                               env::var("ANTHROPIC_AUTH_TOKEN_BLU").is_ok() {
-                    "Anthropic"
-                } else if chat.client_config.get_api_url(ModelColor::BluModel).is_some() {
-                    "llama.cpp"
-                } else {
-                    "Groq"
-                };
-                let url = chat.client_config.get_api_url(ModelColor::BluModel)
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions");
-                let model = chat.client_config.get_model_override(ModelColor::BluModel)
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| "moonshotai/kimi-k2-instruct-0905");
-                (backend, url, model)
-            }
-            ModelColor::GrnModel => {
-                let backend = if chat.client_config.get_api_url(ModelColor::GrnModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
-                               env::var("ANTHROPIC_AUTH_TOKEN_GRN").is_ok() {
-                    "Anthropic"
-                } else if chat.client_config.get_api_url(ModelColor::GrnModel).is_some() {
-                    "llama.cpp"
-                } else {
-                    "Groq"
-                };
-                let url = chat.client_config.get_api_url(ModelColor::GrnModel)
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions");
-                let model = chat.client_config.get_model_override(ModelColor::GrnModel)
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| "openai/gpt-oss-120b");
-                (backend, url, model)
-            }
-            ModelColor::RedModel => {
-                let backend = if chat.client_config.get_api_url(ModelColor::RedModel).as_ref().map(|u| u.contains("anthropic")).unwrap_or(false) ||
-                               env::var("ANTHROPIC_AUTH_TOKEN_RED").is_ok() {
-                    "Anthropic"
-                } else if chat.client_config.get_api_url(ModelColor::RedModel).is_some() {
-                    "llama.cpp"
-                } else {
-                    "Groq"
-                };
-                let url = chat.client_config.get_api_url(ModelColor::RedModel)
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| "https://api.groq.com/openai/v1/chat/completions");
-                let model = chat.client_config.get_model_override(ModelColor::RedModel)
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| "meta-llama/llama-3.1-70b-versatile");
-                (backend, url, model)
-            }
-        };
-        (backend_name.to_string(), url.to_string(), model_name)
-    };
+    // Display model provider debug info
+    println!("\n{} Model Providers:", "🔧".bright_cyan().bold());
+    println!("{} BluModel: {:?}", "   ".bright_black(), chat.client_config.get_provider(ModelColor::BluModel));
+    println!("{} GrnModel: {:?}", "   ".bright_black(), chat.client_config.get_provider(ModelColor::GrnModel));
+    println!("{} RedModel: {:?}", "   ".bright_black(), chat.client_config.get_provider(ModelColor::RedModel));
 
     // Function to get API key preview for a model based on its resolved configuration
     let get_api_key_preview = |model_color: ModelColor, _backend: &str| {
@@ -154,45 +96,23 @@ pub async fn run_repl_mode(
         key_preview.map(|k| k.green())
     };
 
-    // BluModel details
-    let (blu_backend, blu_url, blu_model) = get_backend_info(ModelColor::BluModel);
-    let blu_icon = match blu_backend.as_str() {
-        "Anthropic" => "🧠",
-        "llama.cpp" => "🦙",
-        "Groq" => "🚀",
-        _ => "⚙️",
-    };
-    println!("{} {} ({})", "BluModel:".bright_blue().bold(), blu_model, blu_backend.bright_black());
-    println!("   {} {}", "API:".bright_black(), blu_url.bright_black());
-    if let Some(key_preview) = get_api_key_preview(ModelColor::BluModel, &blu_backend) {
-        println!("   {} {}", "Key:".bright_black(), key_preview);
-    }
-
-    // GrnModel details
-    let (grn_backend, grn_url, grn_model) = get_backend_info(ModelColor::GrnModel);
-    let grn_icon = match grn_backend.as_str() {
-        "Anthropic" => "🧠",
-        "llama.cpp" => "🦙",
-        "Groq" => "🚀",
-        _ => "⚙️",
-    };
-    println!("{} {} ({}) ⭐", "GrnModel:".bright_green().bold(), grn_model, grn_backend.bright_black());
-    if let Some(key_preview) = get_api_key_preview(ModelColor::GrnModel, &grn_backend) {
-        println!("   {} {}", "Key:".bright_black(), key_preview);
-    }
-
-    // RedModel details
-    let (red_backend, red_url, red_model) = get_backend_info(ModelColor::RedModel);
-    let red_icon = match red_backend.as_str() {
-        "Anthropic" => "🧠",
-        "llama.cpp" => "🦙",
-        "Groq" => "🚀",
-        _ => "⚙️",
-    };
-    println!("{} {} ({})", "RedModel:".bright_red().bold(), red_model, red_backend.bright_black());
-    println!("   {} {}", "API:".bright_black(), red_url.bright_black());
-    if let Some(key_preview) = get_api_key_preview(ModelColor::RedModel, &red_backend) {
-        println!("   {} {}", "Key:".bright_black(), key_preview);
+    // Display model details by iterating over all colors
+    for model_color in ModelColor::iter() {
+        let provider = chat.client_config.get_provider(model_color);
+        let backend_name = provider.backend.as_ref().map_or("Groq", |b| b.as_str());
+        
+        let (label, has_star) = match model_color {
+            ModelColor::BluModel => ("BluModel:".bright_blue().bold(), false),
+            ModelColor::GrnModel => ("GrnModel:".bright_green().bold(), true),
+            ModelColor::RedModel => ("RedModel:".bright_red().bold(), false),
+        };
+        
+        let star_suffix = if has_star { " ⭐" } else { "" };
+        println!("{} {} ({}){}", label, provider.model_name, backend_name.bright_black(), star_suffix);
+        println!("   {} {}", "API:".bright_black(), provider.api_url.as_ref().map(|s| s.as_str()).unwrap_or("https://api.groq.com/openai/v1/chat/completions").bright_black());
+        if let Some(key_preview) = get_api_key_preview(model_color, backend_name) {
+            println!("   {} {}", "Key:".bright_black(), key_preview);
+        }
     }
 
     println!("{}", "═".repeat(80).bright_black());
